@@ -1,120 +1,143 @@
 # SpireZero
 
-An AI that plays Slay the Spire 2, running on an exact Rust port of the game's rules (v0.111.0).
+A Slay the Spire 2 simulator written in Rust, and a bot that plays it.
+
+The simulator follows the real game (v0.111.0) exactly: give it the same seed and the same
+moves and you get the same run, down to every card drawn and every point of damage. The bot is
+trained entirely inside it.
 
 Not affiliated with Mega Crit. You need your own copy of Slay the Spire 2 for art, audio, the
 decompiled reference and the parity oracle; none of it is in this repo.
 
+## Speed
+
+Measured with `cargo xtask bench` on a Ryzen 7 7800X3D (8 cores, 16 threads), release build with
+LTO. A fight is an Ironclad starter deck against one of the 22 act 1 encounters, played with
+random legal moves until someone dies.
+
+| | 1 core | 16 threads |
+|---|---:|---:|
+| fights per second | 115,000 | 1,000,000 |
+| actions per second | 2.5 M | 22 M |
+| time per action | ~400 ns | |
+| whole runs per second (random play, ~70 actions each) | 11,400 | 114,000 |
+
+```
+cargo xtask bench --mode fights --threads 1
+cargo xtask bench --mode fights --threads all --seeds 100000
+cargo xtask bench --mode runs --threads 1 --runs 20000
+```
+
+A PGO build (`cargo xtask bench --pgo`) adds about 30% on one core. The state is plain data, so
+copying a fight for search is cheap and allocation-free once warm
+(`crates/sts2-core/tests/it/copy_alloc.rs`). Profiles and the history of each speed-up are in
+[`docs/perf.md`](docs/perf.md).
+
 ## The bot
 
-It plays honestly: it never sees draw order, RNG streams or unrolled event outcomes, only what a
-player sees ([`docs/specs/honesty.md`](docs/specs/honesty.md)). A leak gate fails the build if its
-actions depend on hidden state (`crates/sts2-diff/tests/it/honest.rs`).
-
-It combines a search over blindfolded worlds, a learned run policy (PPO) for map, reward, shop and
-rest choices, a combat value net, and a learned whole-fight playout policy in boss fights. All are
-trained in the simulator; no human games are used.
-
-Ironclad, ascension 0, every win replayed in the engine
+Ironclad, ascension 0. Every win is replayed in the engine to check it
 ([`docs/research/rlb14-playouts.md`](docs/research/rlb14-playouts.md)):
 
-| Seeds | Wins |
+| seeds | wins |
 |---|---|
 | test, 9,000,000 x 200 | 187 (93.5%) |
 | dev, 8,000,000 x 1,000 | 925 (92.5%) |
 | train, 1,000,000 x 1,000 | 943 (94.3%) |
 
+It plays fair. It never looks at the draw order, the RNG or how an event will roll; it only uses
+what a player can see on screen ([`docs/specs/honesty.md`](docs/specs/honesty.md)). A test fails
+the build if any of its choices depend on hidden state (`crates/sts2-diff/tests/it/honest.rs`).
+
+Fights are played by a search over sampled worlds with a combat value net at the leaves. Map,
+card reward, shop and rest choices come from a run policy trained with PPO. No human games were
+used for any of it.
+
+Most losses are at the act 3 boss: Queen and Test Subject account for 64 of 120 losses on the
+train seeds ([`docs/research/rlb16-loss-anatomy.md`](docs/research/rlb16-loss-anatomy.md)). So far
+only Ironclad at A0 is trained; [`docs/specs/a10-training.md`](docs/specs/a10-training.md) covers
+A10.
+
+To reproduce the test row:
+
 ```
 cargo build --release -p sts2-diff
-V="--value builtin --value-leaves --value-hp 300"
-target/release/sts2-diff bot --first 9000000 --count 200 $V --rollout v2 --value-mix 300 \
+target/release/sts2-diff bot --first 9000000 --count 200 \
+    --value builtin --value-leaves --value-hp 300 --rollout v2 --value-mix 300 \
     --run-policy builtin --out DIR
 ```
 
-For dev use `--first 8000000 --count 1000`. Most losses come at the act-3 boss: Queen and Test
-Subject end 64 of 120 losses on train seeds
-([`docs/research/rlb16-loss-anatomy.md`](docs/research/rlb16-loss-anatomy.md)). Only Ironclad at
-ascension 0 is trained so far; A10 work is in [`docs/specs/a10-training.md`](docs/specs/a10-training.md). Approaches that did not help are
-in [`docs/research/`](docs/research/); `learn/rl/index.html` is a course on the RL setup.
+## Playing
 
-## Play it
-
-**Web UI** (`crates/sts2-web`). You play a run in the browser; the bot can give advice or replay your seed. The layout is built for touch on a phone and works on
-desktop. Saves stay in the browser.
+The web client (`crates/sts2-web`) runs entirely in the browser: the engine and the bot are
+compiled to wasm, and saves stay in local storage. It works on a phone or a desktop, and the bot
+can suggest moves or replay your seed.
 
 ```
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.129 --locked
-cargo xtask art-import          # art and text from your own game copy
-crates/sts2-web/build.sh        # writes crates/sts2-web/www/pkg
-crates/sts2-web/serve.sh        # or serve crates/sts2-web/www with any static server
+cargo xtask art-import          # art and text from your copy of the game
+crates/sts2-web/build.sh
+crates/sts2-web/serve.sh        # or any static file server on crates/sts2-web/www
 ```
 
-Details: [`crates/sts2-web/README.md`](crates/sts2-web/README.md).
-
-**Terminal** (ratatui): `cargo run -p sts2-tui --release`. Options:
+There is also a terminal client: `cargo run -p sts2-tui --release`.
+More in [`crates/sts2-web/README.md`](crates/sts2-web/README.md) and
 [`crates/sts2-tui/README.md`](crates/sts2-tui/README.md).
 
-Both clients render the screens built by `sts2-view`
-([`docs/specs/clients.md`](docs/specs/clients.md)).
+## How parity is checked
 
-## The engine
+`referee/` runs the real game headless. `sts2-diff` feeds the same moves to both and compares the
+full state after every action: combat seeds, whole runs, events, ancients and maps, plus a set of
+recorded runs kept as fixtures. On the run loadouts, 497 of 558 cards, all 64 potions and 231 of
+242 powers have been exercised. Details in [`docs/regression.md`](docs/regression.md).
 
-`sts2-core` is a port, not a clone: the same seed and the same actions give the same result as the
-real game. Parity is measured, not assumed. `referee/` runs the real game headless, and `sts2-diff`
-plays the engine and the referee through the same actions and compares every step: combat seeds,
-whole runs, events, ancients and maps, plus pinned run fixtures. The verification stack is in
-[`docs/regression.md`](docs/regression.md). Behaviour coverage of the run loadouts: 497 of 558
-cards played, 64 of 64 potions used, 231 of 242 powers changed.
+Behaviour comes from the game's decompiled code, which you generate locally with
+`tools/decompile.sh` into `ref/` (git-ignored). Citations like `Foo.cs:123` in the code point
+there, and [`docs/semantics/`](docs/semantics/) collects what has been learned from it.
 
-## Bring your own game
+## What needs the game
 
-Works without the game: `cargo build` and `cargo test` of the workspace (tests that need game
-files skip), the engine, the RL environments, benchmarks, the TUI (ids instead of names) and the
-web UI build.
+Without the game you can build and test the whole workspace (tests that need game files skip),
+run the engine, the RL environments and the benchmarks, use the TUI (it shows ids instead of
+names), and build the web client.
 
-Needs your copy (Steam, v0.111.0, at its default install path; `STS2_GAME` or `--game-dir` points
-elsewhere):
+With your copy (Steam, v0.111.0, found at the default install path, or set `STS2_GAME`):
 
-| What | How |
+| for | run |
 |---|---|
-| Game text and art for the TUI (`--features embedded`) and web UI | `cargo xtask art-import` |
-| Sound for the web UI | `crates/sts2-web/tools/audio_import.py` |
-| The decompiled reference `ref/` | `tools/decompile.sh` (.NET and ilspycmd) |
-| The referee and differential tests (`tools/regress*.sh`, `tools/final_*.sh`) | `referee/setup.sh`, which also clones [sts2-cli](https://github.com/morefreeze/sts2-cli) |
+| art and text in the TUI (`--features embedded`) and the web client | `cargo xtask art-import` |
+| sound in the web client | `crates/sts2-web/tools/audio_import.py` |
+| the decompiled reference in `ref/` | `tools/decompile.sh` (needs .NET and ilspycmd) |
+| the referee and the differential tests | `referee/setup.sh` (also clones [sts2-cli](https://github.com/morefreeze/sts2-cli)) |
 
-Imported data goes to `~/.cache/spirezero-data` (`$SPIREZERO_DATA`). The old `spirebot` names of
-these dirs and variables are still read.
+Imported data goes to `~/.cache/spirezero-data` (`$SPIREZERO_DATA`).
 
-## Layout
+## Crates
 
-| Crate | What it is |
+| crate | |
 |---|---|
-| `sts2-core` | The engine: combat, run layer, content (one file per entity). |
-| `sts2-macros` | Proc macros for the engine's hook dispatch. |
-| `sts2-diff` | The differential harness, and the honest bot (`bot`, `fights`, training tools). |
-| `sts2-view` | The presentation model shared by the clients: screens, text, menus. |
-| `sts2-tui` | The terminal client. |
-| `sts2-web`, `sts2-web-bot` | The browser client (wasm plus page) and the bot in a Web Worker. |
-| `sts2-rl`, `sts2-ffi` | The RL environment and its C ABI for Python. |
-| `sts2-bench`, `sts2-kernel` | Benchmarks and an experimental fixed-capacity fight kernel. |
-| `referee/` | The real game, headless, as the test oracle. |
-| `xtask/` | Automation: `cargo xtask gate` (fmt, clippy, tests), `art-import`, `coverage`. |
+| `sts2-core` | the engine: combat, the run, every card, relic, potion and monster |
+| `sts2-macros` | proc macros for hook dispatch |
+| `sts2-diff` | differential tests against the real game, and the bot |
+| `sts2-view` | screen models shared by both clients |
+| `sts2-tui` | terminal client |
+| `sts2-web`, `sts2-web-bot` | browser client, and the bot in a Web Worker |
+| `sts2-rl`, `sts2-ffi` | RL environments and their C ABI for Python |
+| `sts2-bench`, `sts2-kernel` | benchmarks and an experimental fixed-size fight kernel |
+| `referee/` | the real game, headless |
+| `xtask/` | `cargo xtask gate` (fmt, clippy, tests), `bench`, `art-import`, `coverage` |
 
-Docs start at [`docs/README.md`](docs/README.md); changes, newest first, in
-[`docs/CHANGELOG.md`](docs/CHANGELOG.md).
+Docs start at [`docs/README.md`](docs/README.md); [`docs/CHANGELOG.md`](docs/CHANGELOG.md) lists
+changes, newest first.
 
-## Truth and rules
+## Contributing
 
-The decompiled game is the authority for behaviour. `tools/decompile.sh` makes it locally under
-`ref/` (git-ignored); citations like `Foo.cs:N` in code and docs point into it.
-[`docs/semantics/`](docs/semantics/) is the ledger of facts learned from it.
+Port behaviour from the decompiled code; don't guess it, and don't copy it. Fixtures and golden
+data are read-only, so if a test fails, fix the engine. Game logic uses no floats (C# `decimal`
+is emulated exactly).
 
-Port from the decompilation, never guess. Golden data and fixtures are read-only: fix the code,
-not the test. No floats in game logic (C# `decimal` is emulated exactly). State is plain data: ids,
-no `Rc`/`RefCell`/`dyn`. Never copy decompiled code into the engine.
+## License
 
-## Licence
-
-MIT, see `LICENSE` and `NOTICE`. Parts adapt [spire-mentor](https://github.com/tfriedel/spire-mentor)
-and build on [sts2-cli](https://github.com/morefreeze/sts2-cli).
+MIT, see `LICENSE`. `NOTICE` credits [spire-mentor](https://github.com/tfriedel/spire-mentor)
+for adapted code and [sts2-cli](https://github.com/morefreeze/sts2-cli), which the referee builds
+on.
