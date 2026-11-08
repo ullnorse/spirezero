@@ -1,0 +1,18 @@
+{
+  "character": "Necrobinder",
+  "ascension": 0,
+  "encounter": "FUZZY_WURM_CRAWLER_WEAK",
+  "loadout": {
+    "deck": ["STRIKE_NECROBINDER", "STRIKE_NECROBINDER", "DEFEND_NECROBINDER", "DEFEND_NECROBINDER",
+             "BODYGUARD+1", "POKE", "GRAVEBLAST", "REAP", "SEANCE", "DEFILE+1"],
+    "relics": ["BOUND_PHYLACTERY", "ANCHOR"],
+    "potions": ["FIRE_POTION"],
+    "hp": 40,
+    "max_hp": 66
+  },
+  "actions": [
+    {"action": "use_potion", "args": {"potion_index": 0, "target_index": 0}},
+    {"action": "play_card", "args": {"card_index": 0, "target_index": 0}},
+    {"action": "end_turn"}
+  ]
+}

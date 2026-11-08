@@ -1,0 +1,35 @@
+
+
+         ♥ 0/1   ◉ 300   Floor 2                                                                     Tab ≡
+         ────────────────────────────────────────────────────────────────────────────────────────────────────
+         z ◈ Fire   c ◈ Block                                               ◆ Burning Blood  ◆ Neow's Torment
+
+                                                        DEFEAT
+                                                    Act 1 · Floor 2
+
+                                          Slain by Leaf Slime (S): Tackle 1.
+
+                                          Ironclad · Ascension 0 · seed 12345
+                                        1 room · 1 fight · 0 elites · 0 events
+                                              ◉ 300 · 11 cards · 2 relics
+
+         ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+         │▸r  Retry this seed                                                                               │
+         │ n  New seed                                                                                      │
+         │ d  Deck                                                                                        11│
+         │ v  Relics                                                                                       2│
+         │ h  Rooms visited                                                                                1│
+         │ c  Character select                                                                              │
+         │ q  Quit                                                                                          │
+         └──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+                                        ↑↓ move · Enter choose · row keys pick

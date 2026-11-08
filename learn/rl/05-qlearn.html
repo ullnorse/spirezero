@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learning from experience</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="05-qlearn">
+<main>
+  <div class="kicker">Week 2 · Day 6</div>
+  <h1>Learning from experience: a Q-learning agent, live</h1>
+  <p class="lead">Day 5 estimated Q by rolling fights out from one state. That doesn't scale. Q-learning estimates Q for <i>every</i> state the agent visits, from the fights it is already playing, one small correction at a time. Here it trains in your browser.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>Keep a table: for each state the agent has seen, three numbers, Q(s, Strike), Q(s, Defend), Q(s, End). Play fights with ε-greedy on that table (explore a little, exploit mostly). After every single step, do one update:</p>
+    <div class="formula">Q(s, a) ← Q(s, a) + α · ( r + γ · max<sub>a′</sub> Q(s′, a′) − Q(s, a) )</div>
+    <p>In words: <b>what I thought this move was worth</b>, nudged toward <b>the reward I just got plus the best I now think the next state is worth</b>. The nudge size is α, the learning rate. The target uses the table's own guess about the next state, so early on it is guessing from guesses. That sounds hopeless, but the terminal steps are anchored to real rewards (+1, −1), and that truth propagates backward through the table, one step per update, until the whole thing is consistent. This is <b>temporal-difference learning</b>, and the intuition "today's guess should match tomorrow's reward plus tomorrow's guess" is the single most important idea in RL.</p>
+  </div>
+
+  <div class="toy">
+    <div class="kicker">Toy · train it</div>
+    <div class="row">
+      <label>α learning rate <input type="range" id="alpha" min="0.01" max="0.6" step="0.01" value="0.1"> <span class="val" id="alphaV">0.10</span></label>
+      <label>ε exploration <input type="range" id="eps" min="0" max="0.5" step="0.01" value="0.1"> <span class="val" id="epsV">0.10</span></label>
+      <label>γ discount <input type="range" id="gamma" min="0.80" max="1" step="0.01" value="0.99"> <span class="val" id="gammaV">0.99</span></label>
+    </div>
+    <div class="row">
+      <label>what the agent sees <select id="feat">
+        <option value="coarse">coarse buckets (intent, energy, hand, danger, HP band, strikes-to-kill)</option>
+        <option value="full">every number (exact state)</option>
+        <option value="blind">only energy and hand (blind to the enemy)</option>
+      </select></label>
+      <label>speed <input type="range" id="speed" min="1" max="200" value="40"> <span class="val" id="speedV">40</span> ep/frame</label>
+    </div>
+    <div class="row">
+      <button class="primary" id="train">Train</button><button id="pause">Pause</button><button id="reset">Reset table</button>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">episodes</div><div class="v" id="eps_n">0</div></div>
+      <div class="tile"><div class="k">steps</div><div class="v" id="steps">0</div></div>
+      <div class="tile"><div class="k">table rows</div><div class="v" id="rows">0</div></div>
+      <div class="tile"><div class="k">training win rate (last 500)</div><div class="v" id="trainWr">–</div></div>
+      <div class="tile"><div class="k">greedy win rate (ε = 0)</div><div class="v" id="evalWr">–</div></div>
+    </div>
+    <canvas id="chart" height="220"></canvas>
+    <p class="muted">Dashed lines: the fixed policies from day 1 for scale. Greedy win rate is measured every 1,000 episodes on 400 fresh fights with exploration off.</p>
+  </div>
+
+  <div class="toy">
+    <div class="kicker">Toy · watch it think</div>
+    <p>One fight, played by the current table with ε = 0, one step every half second. The bars are Q(s, ·) for the state on screen; the line under them is the update that step produced.</p>
+    <div class="row"><button id="watch">Watch a fight</button><button id="stopWatch">Stop</button></div>
+    <div id="wfight"></div>
+    <canvas id="qbars" height="90"></canvas>
+    <div class="log" id="wlog"></div>
+  </div>
+
+  <h2>What to try</h2>
+  <ul>
+    <li><b>Defaults.</b> Train. Within a few thousand episodes the coarse agent beats "turtle" and approaches the hand-written rule. Nobody told it to block lethal hits.</li>
+    <li><b>Blind.</b> Reset, pick "only energy and hand", train. The curve flat-lines near zero. The table is tiny and converges fast, to the wrong thing, because the states it needs to tell apart look identical. No learning rate fixes a missing observation (day 2 again).</li>
+    <li><b>Exact state.</b> Learns higher, but notice the table size: tens of thousands of rows for a game with two card types. It needs more episodes to fill them. That tension is day 8.</li>
+    <li><b>α = 0.6.</b> Fast, then jittery: each update overwrites too much of what was known. <b>α = 0.01:</b> smooth and slow.</li>
+    <li><b>ε = 0.</b> Sometimes fine, sometimes stuck: the table never learns about a move it never tries. Compare with ε = 0.3 and watch the training win rate sit below the greedy win rate: exploring costs fights while you learn.</li>
+    <li><b>γ = 0.8.</b> Future reward is discounted hard, so a win five steps away is worth 0.8<sup>5</sup> ≈ 0.33. The agent cares less about the end of the fight. Here that mostly slows learning; in some games it changes what the agent wants.</li>
+  </ul>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li>The <b>episode</b> is what <span class="path"><code>crates/sts2-rl/src/envs.rs</code></span> manages: it ends on win, loss, unported content, an empty mask or <code>MAX_EPISODE_ACTIONS</code>, and auto-resets from the next start. The training loop above is that, with the learner wrapped around it.</li>
+      <li>The featurizer choice in this toy is SpireZero's <b>observation design</b> in miniature: <span class="path"><code>crates/sts2-rl/src/obs.rs</code></span> chose "every number that matters, as plain integers", the "full" option here, and leaves the bucketing to the network.</li>
+      <li>There is no tabular agent in the repo, and there won't be: no table could index 972-byte observations. That is the point of the next lesson.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>Q-learning's target is the Bellman optimality equation applied to one sample transition (s, a, r, s′):</p>
+      <div class="formula">target = r + γ · max<sub>a′</sub> Q(s′, a′) &nbsp;&nbsp; (just r if s′ is terminal)</div>
+      <div class="formula">Q(s, a) ← (1 − α) · Q(s, a) + α · target</div>
+      <p>The difference (target − Q(s, a)) is the <b>TD error</b>. It is "off-policy": the max makes it learn about the greedy policy even while behaving ε-greedily. Its sibling <b>SARSA</b> uses Q(s′, a′) for the action actually taken next, and so learns about the exploring policy itself.</p>
+      <p>With a decaying α and every state-action pair visited infinitely often, tabular Q-learning converges to the optimal Q*. "Infinitely often" is doing a lot of work in that sentence, and the next lesson is about what happens when the table is too large to visit.</p>
+    </div>
+  </details>
+
+  
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    const F = Fight;
+    const $ = id => document.getElementById(id);
+    ['alpha', 'eps', 'gamma'].forEach(k => $(k).addEventListener('input', e => { $(k + 'V').textContent = (+e.target.value).toFixed(2); if (agent) agent[k] = +e.target.value; }));
+    $('speed').addEventListener('input', e => $('speedV').textContent = e.target.value);
+    const BASE = { randomCard: F.evaluate(F.randomCardPolicy, 2000, 1).winRate, berserk: F.evaluate(F.berserkPolicy, 2000, 1).winRate, turtle: F.evaluate(F.turtlePolicy, 2000, 1).winRate, heuristic: F.evaluate(F.heuristicPolicy, 2000, 1).winRate };
+    let agent, loop, recent = [], trainCurve = [], evalCurve = [];
+    function makeAgent() {
+      agent = F.QAgent({ alpha: +$('alpha').value, eps: +$('eps').value, gamma: +$('gamma').value, key: F.FEATURIZERS[$('feat').value], rand: Course.rng(Date.now() & 0xffff) });
+      recent = []; trainCurve = []; evalCurve = []; draw();
+    }
+    function draw() {
+      $('eps_n').textContent = Course.fmtInt(agent.episodes); $('steps').textContent = Course.fmtInt(agent.steps); $('rows').textContent = Course.fmtInt(agent.Q.size);
+      $('trainWr').textContent = recent.length >= 50 ? Course.pct(recent.reduce((a, b) => a + b, 0) / recent.length) : '–';
+      $('evalWr').textContent = evalCurve.length ? Course.pct(evalCurve[evalCurve.length - 1][1]) : '–';
+      Course.lineChart($('chart'), [{ name: 'training win rate (with exploration)', data: trainCurve }, { name: 'greedy win rate', data: evalCurve, dots: true }], {
+        ymin: 0, ymax: 1, xlabel: 'episodes', yfmt: v => (100 * v).toFixed(0) + '%',
+        hlines: [{ y: BASE.heuristic, label: 'hand-written rule', color: '--good' }, { y: BASE.turtle, label: 'turtle', color: '--block' }, { y: BASE.randomCard, label: 'random over cards', color: '--fg3' }, { y: BASE.berserk, label: 'berserk', color: '--bad' }],
+      });
+    }
+    function trainStep() {
+      const per = +$('speed').value;
+      for (let i = 0; i < per; i++) {
+        const s = agent.episode();
+        recent.push(s.won ? 1 : 0); if (recent.length > 500) recent.shift();
+        if (agent.episodes % 100 === 0) trainCurve.push([agent.episodes, recent.reduce((a, b) => a + b, 0) / recent.length]);
+        if (agent.episodes % 1000 === 0) evalCurve.push([agent.episodes, F.evaluate(agent.policy, 400, agent.episodes).winRate]);
+      }
+      draw();
+      return agent.episodes < 200000;
+    }
+    $('train').addEventListener('click', () => { if (loop && loop.running) return; loop = Course.runLoop(trainStep, 14); });
+    $('pause').addEventListener('click', () => { if (loop) loop.stop(); });
+    $('reset').addEventListener('click', () => { if (loop) loop.stop(); makeAgent(); });
+    $('feat').addEventListener('change', () => { if (loop) loop.stop(); makeAgent(); });
+    makeAgent();
+
+    // watch
+    let timer;
+    $('stopWatch').addEventListener('click', () => clearInterval(timer));
+    $('watch').addEventListener('click', () => {
+      clearInterval(timer);
+      const rand = Course.rng(Date.now() & 0xffff), s = F.newFight(rand), log = $('wlog'); log.innerHTML = '';
+      const show = (hl) => { F.render($('wfight'), s, { highlight: hl }); const q = agent.q(agent.key(s)); Course.bars($('qbars'), q, F.ACTIONS.map((a, i) => F.legal(s)[i] ? a : a + ' (illegal)'), { signed: true, max: 1, fmt: v => v.toFixed(3), labelWidth: 130, colors: q.map((v, i) => F.legal(s)[i] ? (v >= 0 ? '--good' : '--bad') : '--line') }); };
+      show();
+      timer = setInterval(() => {
+        if (s.done) { clearInterval(timer); return; }
+        const k = agent.key(s), m = F.legal(s), a = agent.greedy(s, m), q = agent.q(k), before = q[a];
+        const r = F.step(s, a, rand);
+        let target = r.reward, nextBest = 0;
+        if (!r.done) { const q2 = agent.q(agent.key(s)), m2 = F.legal(s); nextBest = -Infinity; for (let b = 0; b < 3; b++) if (m2[b]) nextBest = Math.max(nextBest, q2[b]); target += agent.gamma * nextBest; }
+        q[a] += agent.alpha * (target - q[a]);
+        const d = document.createElement('div');
+        d.innerHTML = `<span class="s">${F.ACTIONS[a]}</span> · Q was ${before.toFixed(3)} → target = r ${r.reward} + γ·${r.done ? '0 (terminal)' : nextBest.toFixed(3)} = ${target.toFixed(3)} → Q now ${q[a].toFixed(3)} <span class="muted">(${r.events.join(' · ')})</span>`;
+        log.appendChild(d); log.scrollTop = log.scrollHeight;
+        show();
+      }, 600);
+    });
+
+    Course.quiz('#quiz', [
+      { q: 'In the update, where does the "truth" come from if the target uses the table\'s own guesses?', choices: ['From the learning rate', 'From terminal steps, whose targets are real rewards; consistency propagates it backward', 'From the heuristic policy'], answer: 1, why: 'Wins and losses anchor the table. Each update makes a state agree with its successor, so the anchored values flow back one step at a time.', hint: 'Which transitions have a target that contains no guess at all?' },
+      { q: 'The "blind" agent converges quickly and stays bad. Which knob fixes it?', choices: ['A smaller learning rate', 'More exploration', 'None of them: the observation lacks the information'], answer: 2, why: 'Two states that need different actions but look the same to the agent get one shared Q. That is an observation problem, not a learning problem.', hint: 'Day 2.' },
+      { q: 'Why can the training win rate sit below the greedy win rate?', choices: ['Training fights use a harder Worm', 'ε-greedy deliberately plays some random moves while learning', 'The greedy evaluation cheats by seeing the intent'], answer: 1, why: 'Exploration costs reward now in exchange for knowledge. The greedy policy is what you keep; the ε-greedy one is how you got it.', hint: 'What is the difference between the two policies?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

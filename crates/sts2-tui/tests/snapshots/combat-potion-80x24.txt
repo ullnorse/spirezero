@@ -1,0 +1,24 @@
+                 ♥ 80/80   ◉ 300   Floor 2             Tab ≡
+                 ──────────────────────────────────────────────
+                 c ◈ Block Potion?  Enter use · t throw away
+                               1 Leaf Slime (S) ›
+                                      ⚔ 3
+                             ▕██████████████▏ 14/14
+                               2 Leaf Slime (M) ›
+                                   ✚ 2 Slimed
+                             ▕██████████████▏ 33/33
+                               3 Twig Slime (S) ›
+                                      ⚔ 4
+                              ▕██████████████▏ 7/7
+                                    Ironclad
+                             ▕██████████████▏ 80/80
+                               ⚔ −7 HP next turn
+                 ┌────────────────────────────────────────────┐
+                 │ 1  ϟ1 Strike  Deal 6 damage               ›│
+                 │ 2  ϟ1 Defend  Gain 5 Block                ›│
+                 │ 3  ϟ1 Defend  Gain 5 Block                ›│
+                 │ 4  ϟ1 Strike  Deal 6 damage               ›│
+                 │ 5  ϟ1 Defend  Gain 5 Block                ›│
+                 └────────────────────────────────────────────┘
+                 ϟ 3/3 Energy   a Draw 6 · s Discard 0
+                                 e   End Turn

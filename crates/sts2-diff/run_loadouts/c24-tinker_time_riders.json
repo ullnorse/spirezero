@@ -1,0 +1,1 @@
+{"event": "TINKER_TIME", "continue": true, "policy": "random", "prefer": ["SAPPING", "ENERGIZED", "CHAOS", "IMPROVEMENT"], "characters": ["Necrobinder", "Ironclad", "Silent"]}

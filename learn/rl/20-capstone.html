@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capstone</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="20-capstone">
+<main>
+  <div class="kicker">Week 4 · Day 20</div>
+  <h1>Capstone</h1>
+  <p class="lead">One script that does the course: train the slot net with PPO on real Act 1 fights for a time budget, evaluate it by the protocol against random and cards first, and write the report. Five minutes on an RTX 4080 Super. Then the write-up, which is the artefact everything you train later is compared with.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>A result is a number from a fixed protocol, with its standard error, next to the baselines, with the curve that produced it and the settings that reproduce it. The script produces all of that in one directory; the page is the template for the one paragraph per section that turns the directory into something a colleague can act on.</p>
+  </div>
+
+  <h2>The script</h2>
+  <pre><code>.venv/bin/python learn/rl/exercises/week4/day20_capstone.py 5 target/learn/capstone
+# it=0  steps=32768  win_rate=0.412  eval_win=-  entropy=2.31  ...  sps=71234
+# ...
+# random           win 0.343 ± 0.015  length 23.1
+# cards first      win 0.591 ± 0.015  length 19.8
+# slot net (best)  win 0.8xx ± 0.012  length 22.4
+# report: target/learn/capstone/report.md</code></pre>
+  <p>What it assembles: day 14's <code>SlotNet</code> and <code>featurise14</code>, day 10's <code>update</code>, day 11's log rows and checkpoint, day 13's <code>evaluate</code> and <code>compare</code>. The settings are day 11's sketch at full size, 256 envs by 128 steps with minibatches of 4,096, four engine threads, an evaluation of 1,024 fights every ten iterations and a checkpoint whenever it improves. The budget is wall time, so a slower machine gets fewer iterations and the same report.</p>
+  <div class="toy">
+    <div class="kicker">Toy · what five minutes buys</div>
+    <div class="row">
+      <label>env steps/s end to end <input type="range" id="sps" min="20000" max="200000" step="5000" value="70000"> <span class="val" id="spsV">70k</span></label>
+      <label>minutes <input type="range" id="min" min="1" max="30" value="5"> <span class="val" id="minV">5</span></label>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">env steps</div><div class="v" id="steps">–</div></div>
+      <div class="tile"><div class="k">iterations</div><div class="v" id="its">–</div></div>
+      <div class="tile"><div class="k">fights</div><div class="v" id="fights">–</div></div>
+      <div class="tile"><div class="k">evaluations</div><div class="v" id="evals">–</div></div>
+    </div>
+  </div>
+  <p>Read the <code>sps</code> column of the log: it includes the rollout, the update and the evaluation. If it is far under the bench's number for the env alone, the net is the bottleneck, which is where day 10 said it would be; a larger minibatch or a smaller body moves it.</p>
+
+  <h2>The write-up</h2>
+  <p>One page, in this order, each section a paragraph and a table or a figure:</p>
+  <ol>
+    <li><b>Setup.</b> Engine build id and vocab hash, the start corpus, the net, the settings dict from <code>best.pt</code>, the seed. Enough to rerun.</li>
+    <li><b>Baselines.</b> The random and cards-first rows of <code>report.md</code> with standard errors, and the per-encounter table for cards first.</li>
+    <li><b>Curves.</b> Training win rate, eval win rate, entropy, clip fraction, KL from <code>history.json</code>; day 18's diagnosis of the run in one line.</li>
+    <li><b>Result.</b> The net's row, the gain over cards first with its standard error, the per-encounter diff sorted by gain, the bottom rows read as day 13 said.</li>
+    <li><b>The next experiment.</b> One, with the number it has to beat and the fights that takes. Candidates from this course: a harder start corpus from <code>cargo xtask sweep --emit-starts</code>, the run env with the fight net plugged in, per-enemy features for the target head.</li>
+  </ol>
+
+  <h2>Where the course leaves you</h2>
+  <p>A trainer you understand line by line, an evaluation you trust, a net whose structure matches the action space, a reward you chose with data, a run env measured by floor, and the signatures of the ways it breaks. What is left is the part no course covers: harder corpora, longer runs, and the discipline of changing one thing at a time and measuring it against this report.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>learn/rl/exercises/solutions/week4/day20_capstone.py</code></span>: the reference script, every piece imported from the earlier days' solutions.</li>
+      <li><span class="path"><code>python/sts2/ffi.py</code></span>: <code>source_hash()</code> and <code>sts2_vocab_hash</code>, the two ids the setup section records.</li>
+      <li><span class="path"><code>docs/PLAN.md</code></span>: the RL milestones after this one.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <script>
+    Course.init();
+    const $ = id => document.getElementById(id);
+    function calc() {
+      const sps = +$('sps').value, min = +$('min').value;
+      $('spsV').textContent = (sps / 1000).toFixed(0) + 'k'; $('minV').textContent = min;
+      const steps = sps * min * 60, its = Math.floor(steps / (256 * 128));
+      $('steps').textContent = Course.fmtInt(steps); $('its').textContent = Course.fmtInt(its); $('fights').textContent = Course.fmtInt(steps / 22); $('evals').textContent = Course.fmtInt(Math.floor(its / 10) + 1);
+    }
+    ['sps', 'min'].forEach(k => $(k).addEventListener('input', calc)); calc();
+    Course.quiz('#quiz', [
+      { q: 'The report shows the slot net at 0.81 ± 0.012 and cards first at 0.59 ± 0.015. A colleague asks whether a new featuriser at 0.83 ± 0.012 is better. Your answer?', choices: ['Yes, 0.83 > 0.81', 'Not yet: the gap is about one standard error of the difference; run the fights day 13\'s calculator asks for, on the same seed', 'No, featurisers do not matter'], answer: 1, why: 'The report exists so that this question has a procedure instead of an opinion.', hint: 'Compute the standard error of the difference.' },
+      { q: 'What must the setup section contain for the result to be reproducible?', choices: ['The date', 'Build id, vocab hash, start corpus, the settings dict and the seed', 'The GPU model'], answer: 1, why: 'Those are the inputs; the GPU changes the iteration count, not the trajectory of a given iteration.', hint: 'What does best.pt store next to the weights?' },
+      { q: 'The budget is wall time rather than a step count. What does that cost?', choices: ['Nothing', 'Comparability across machines: the report must quote the steps reached, and a comparison between runs is at equal steps, not equal minutes', 'Reproducibility of the weights'], answer: 1, why: 'Time budgets are convenient for a course and wrong for a comparison; the steps column in the history is what two runs are matched on.', hint: 'Which column does the next experiment have to match?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

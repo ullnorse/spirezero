@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What the agent sees and may do</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="02-see-do">
+<main>
+  <div class="kicker">Week 1 · Day 2</div>
+  <h1>What the agent sees, and what it may do</h1>
+  <p class="lead">An agent is not handed "the game". It is handed a flat array of numbers (the <b>observation</b>) and a list of which action indices are allowed right now (the <b>action mask</b>). Both are design decisions, and SpireZero has already made them.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p><b>Observation.</b> The state is whatever the engine holds. The observation is the slice of it the agent gets to see, encoded as numbers. If something isn't in the observation, the agent cannot condition on it. (The order of your draw pile is hidden in the real game, so SpireZero hides it too.)</p>
+    <p><b>Action space and mask.</b> A neural net wants a fixed-size output: "action 0 … action N−1". But a fight's legal moves change every step. The fix is a fixed index space plus a <b>mask</b>: a bitset that says which indices are legal <i>now</i>. The agent only ever picks among set bits. The mask says <i>legal</i>, never <i>good</i>; day 1's random agent proved the difference.</p>
+  </div>
+
+  <div class="toy">
+    <div class="kicker">Toy · the mini fight as numbers</div>
+    <p>Play as before. Underneath, the same state as the agent would see it: an observation vector and a 3-bit mask over <code>[Strike, Defend, End turn]</code>.</p>
+    <div id="fight"></div>
+    <div class="row"><button id="newFight">New fight</button>
+      <label><input type="checkbox" id="hideIntent"> hide the intent from the observation</label></div>
+    <pre id="obs" style="margin:0"></pre>
+  </div>
+  <p>Tick "hide the intent" and ask yourself: could any agent, however clever, learn when to block from that vector? It can't. The information isn't there. Observation design is where a lot of RL projects quietly fail, and it's why SpireZero's observation includes the enemies' intents, computed through the same code path the game's intent display would use.</p>
+
+  <h2>SpireZero's action space: 140 indices</h2>
+  <p>The real env has to cover playing any of up to 10 hand cards at any of 8 targets, using any of 6 potions at 8 targets, ending the turn, picking an option in a card choice, and saying "done". That is a fixed grid of 140 indices. Below is a schematic of that layout; set a situation and see which cells light up. (This toy mirrors the index arithmetic in <code>action.rs</code>, not the engine's legality rules, which are far richer.)</p>
+
+  <div class="toy">
+    <div class="kicker">Toy · the 140-index mask</div>
+    <div class="row">
+      <label>cards in hand <input type="range" id="hand" min="0" max="10" value="5"> <span class="val" id="handV">5</span></label>
+      <label>of which need a target <input type="range" id="targeted" min="0" max="10" value="3"> <span class="val" id="targetedV">3</span></label>
+      <label>enemies <input type="range" id="enemies" min="1" max="7" value="2"> <span class="val" id="enemiesV">2</span></label>
+      <label>potions <input type="range" id="potions" min="0" max="6" value="1"> <span class="val" id="potionsV">1</span></label>
+      <label><input type="checkbox" id="choice"> a card choice is pending (3 options)</label>
+    </div>
+    <div class="grid140" id="grid"></div>
+    <div class="legend"><span><i style="background:var(--g-play)"></i>play card</span><span><i style="background:var(--g-potion)"></i>use potion</span><span><i style="background:var(--g-end)"></i>end turn</span><span><i style="background:var(--g-pick)"></i>pick / done</span><span><i style="background:var(--g-off)"></i>masked out</span></div>
+    <div class="stats">
+      <div class="tile"><div class="k">legal indices</div><div class="v" id="nLegal">–</div></div>
+      <div class="tile" style="flex:1"><div class="k">selected index</div><div class="v" id="decode">click a cell</div></div>
+    </div>
+  </div>
+  <p>Two things to take from the grid. First, most of the 140 cells are dark most of the time: the mask is sparse, and a net's output over it would be mostly ignored. Second, the <b>decode</b> of an index is pure arithmetic (<code>index = hand_slot × 8 + target_slot</code>), so the trainer and the engine can never disagree about what an index means.</p>
+
+  <h2>SpireZero's observation: 972 bytes</h2>
+  <p>The dynamic observation is one flat buffer of little-endian integers, rewritten every step. Hover or click a segment to see what's in it. The offsets below are computed from the same constants as <code>obs.rs</code>.</p>
+  <div class="toy">
+    <div class="kicker">Toy · the observation layout</div>
+    <div class="segbar" id="segbar"></div>
+    <div id="segInfo" class="muted">Click a segment.</div>
+    <table id="segTable"></table>
+  </div>
+  <p>Why bytes and not floats, and why no one-hot encodings? Because the engine writes this for 64 or more envs every step and copies it to Python with zero copy. Turning the integers into whatever a network wants (embeddings for card ids, normalised HP) happens in numpy or torch, vectorised over the batch. Keep the hot path dumb.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>crates/sts2-rl/src/action.rs</code></span>: <code>PLAY_BASE</code>, <code>POTION_BASE</code>, <code>END_TURN</code>, <code>PICK_BASE</code>, <code>DONE</code>, <code>ACTIONS = 140</code>; <code>index_of</code> maps a legal <code>Action</code> to its index and <code>Mask::fill</code> builds the bitset <i>from</i> the engine's legal list, so the two cannot drift apart.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/obs.rs</code></span>: the layout (<code>HEADER</code>, <code>CREATURES_AT</code>, <code>CARDS_AT</code>, <code>HAND_AT</code>, <code>INTENTS_AT</code>, <code>CHOICE_AT</code>, <code>OBS_BYTES</code>) and the static part written once per episode (<code>STATIC_BYTES</code>: character, deck, relics, belt).</li>
+      <li><span class="path"><code>crates/sts2-rl/src/intents.rs</code></span>: the intent cache, so "what will the enemy do" is in the observation without re-simulating the enemy every step.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/vocab.rs</code></span> and <span class="path"><code>crates/sts2-rl/vocab/</code></span>: cards, powers, monsters and so on appear as small integer ids from append-only vocabularies, so an id a trained net learned keeps its meaning across builds.</li>
+      <li><span class="path"><code>docs/specs/rl-2x-plan.md</code></span> section 7: the design rationale for both.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>A policy over a discrete action space is usually a <b>softmax</b> over <i>N</i> scores (logits) <i>z<sub>a</sub></i>:</p>
+      <div class="formula">π(a | s) = exp(z<sub>a</sub>) / Σ<sub>b</sub> exp(z<sub>b</sub>)</div>
+      <p>Masking is done by adding a very negative number to the logits of illegal actions before the softmax, which drives their probability to zero without changing the shape of the network:</p>
+      <div class="formula">z<sub>a</sub> ← z<sub>a</sub> + (mask<sub>a</sub> − 1) · 10<sup>9</sup></div>
+      <p>Partial observability has a name too: when the observation is not the full state the problem is a <b>POMDP</b>. Hiding the intent turned the mini fight into one, and no amount of training fixes a missing input.</p>
+    </div>
+  </details>
+
+  
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    const F = Fight;
+    let rand = Course.rng(42), s = F.newFight(rand);
+    const fightEl = document.getElementById('fight'), obsEl = document.getElementById('obs');
+    function obsVector(x, hide) {
+      const o = { player_hp: x.playerHp, block: x.block, energy: x.energy, strikes_in_hand: x.strikes, defends_in_hand: x.defends,
+        enemy_hp: x.enemyHp, enemy_block: x.enemyBlock, enemy_str: x.str };
+      if (!hide) { o.intent_kind = ({ chomp: 1, thrash: 2, bellow: 3 })[x.intent]; o.intent_damage = F.incoming(x); }
+      return o;
+    }
+    function draw() {
+      F.render(fightEl, s, { onAction: a => { F.step(s, a, rand); draw(); } });
+      const hide = document.getElementById('hideIntent').checked;
+      const o = obsVector(s, hide);
+      const m = F.legal(s);
+      obsEl.textContent = 'observation = [' + Object.values(o).join(', ') + ']\n' +
+        '               ' + Object.keys(o).join(', ') + '\n' +
+        `mask        = [${m.map(b => b ? 1 : 0).join(', ')}]   (Strike, Defend, End turn)`;
+    }
+    document.getElementById('newFight').addEventListener('click', () => { s = F.newFight(rand); draw(); });
+    document.getElementById('hideIntent').addEventListener('change', draw);
+    draw();
+
+    // ---- 140 grid
+    const HAND_SLOTS = 10, TARGET_SLOTS = 8, POTION_SLOTS = 6, OPTION_SLOTS = 10;
+    const PLAY_BASE = 0, POTION_BASE = PLAY_BASE + HAND_SLOTS * TARGET_SLOTS, END_TURN = POTION_BASE + POTION_SLOTS * TARGET_SLOTS,
+      PICK_BASE = END_TURN + 1, DONE = PICK_BASE + OPTION_SLOTS, ACTIONS = DONE + 1;
+    const grid = document.getElementById('grid');
+    const cells = [];
+    for (let i = 0; i < ACTIONS; i++) {
+      const kind = i < POTION_BASE ? 'play' : i < END_TURN ? 'potion' : i === END_TURN ? 'end' : i < DONE ? 'pick' : 'done';
+      const d = Course.el('div', { class: kind, title: String(i) }, [String(i)]);
+      d.addEventListener('click', () => { cells.forEach(c => c.classList.remove('sel')); d.classList.add('sel'); document.getElementById('decode').textContent = decode(i); });
+      grid.appendChild(d); cells.push(d);
+    }
+    function decode(i) {
+      if (i < POTION_BASE) { const h = Math.floor(i / 8), t = i % 8; return `${i} = play hand slot ${h} at ${t === 0 ? 'no target / self' : 'enemy slot ' + (t - 1)}`; }
+      if (i < END_TURN) { const p = Math.floor((i - POTION_BASE) / 8), t = (i - POTION_BASE) % 8; return `${i} = use potion ${p} at ${t === 0 ? 'no target / self' : 'enemy slot ' + (t - 1)}`; }
+      if (i === END_TURN) return `${i} = end turn`;
+      if (i < DONE) return `${i} = pick option ${i - PICK_BASE} of the pending choice`;
+      return `${i} = done (finish the choice)`;
+    }
+    function updateGrid() {
+      const hand = +document.getElementById('hand').value, targeted = Math.min(hand, +document.getElementById('targeted').value),
+        enemies = +document.getElementById('enemies').value, potions = +document.getElementById('potions').value,
+        choice = document.getElementById('choice').checked;
+      ['hand', 'targeted', 'enemies', 'potions'].forEach(k => document.getElementById(k + 'V').textContent = k === 'targeted' ? targeted : document.getElementById(k).value);
+      let n = 0;
+      cells.forEach(c => c.classList.remove('on'));
+      if (choice) { for (let o = 0; o < 3; o++) { cells[PICK_BASE + o].classList.add('on'); n++; } cells[DONE].classList.add('on'); n++; }
+      else {
+        for (let h = 0; h < hand; h++) {
+          if (h < targeted) for (let e = 0; e < enemies; e++) { cells[PLAY_BASE + h * 8 + 1 + e].classList.add('on'); n++; }
+          else { cells[PLAY_BASE + h * 8].classList.add('on'); n++; }
+        }
+        for (let p = 0; p < potions; p++) { cells[POTION_BASE + p * 8].classList.add('on'); n++; }
+        cells[END_TURN].classList.add('on'); n++;
+      }
+      document.getElementById('nLegal').textContent = `${n} / ${ACTIONS}`;
+    }
+    ['hand', 'targeted', 'enemies', 'potions', 'choice'].forEach(k => document.getElementById(k).addEventListener('input', updateGrid));
+    updateGrid();
+
+    // ---- observation layout
+    const CREATURES = 8, POWERS = 12, CARDS = 64, HAND = 10, INTENTS = 8, OPTIONS = 10;
+    const HEADER = 24, CREATURE_BYTES = 12 + POWERS * 4, CARD_BYTES = 6, INTENT_BYTES = 5;
+    const CREATURES_AT = HEADER, CARDS_AT = CREATURES_AT + CREATURES * CREATURE_BYTES, HAND_AT = CARDS_AT + CARDS * CARD_BYTES,
+      INTENTS_AT = HAND_AT + HAND * 2, CHOICE_AT = INTENTS_AT + INTENTS * INTENT_BYTES, OBS_BYTES = CHOICE_AT + OPTIONS * 2 + 4;
+    const segs = [
+      { n: 'header', a: 0, b: HEADER, c: 'var(--c1)', d: 'Player HP, max HP, block, energy, max energy, stars (i16 each), turn, round (u16), hand/draw/discard/exhaust/play pile sizes and orb slots (u8), status (0 player turn, 1 decision, 2 won, 3 lost, 4 unsupported).' },
+      { n: 'creatures', a: CREATURES_AT, b: CARDS_AT, c: 'var(--c2)', d: `${CREATURES} slots × ${CREATURE_BYTES} bytes: allies then enemies. alive, side, slot, monster kind (vocab id), HP, max HP, block, then ${POWERS} powers as (kind u16, amount i16).` },
+      { n: 'cards', a: CARDS_AT, b: HAND_AT, c: 'var(--c3)', d: `${CARDS} slots × ${CARD_BYTES} bytes, every card in the combat in creation order (so the draw pile’s order never leaks): kind, upgrade, which pile, current cost, flags.` },
+      { n: 'hand', a: HAND_AT, b: INTENTS_AT, c: 'var(--c4)', d: `${HAND} card ids (u16) in hand order. Hand slot h here is what play index h × 8 + target means.` },
+      { n: 'intents', a: INTENTS_AT, b: CHOICE_AT, c: 'var(--c5)', d: `${INTENTS} × ${INTENT_BYTES} bytes: kind, damage per hit (after Strength and the player’s modifiers), hits, status cards. From the intent cache.` },
+      { n: 'choice', a: CHOICE_AT, b: OBS_BYTES, c: 'var(--c6)', d: `${OPTIONS} option card ids plus min, max, picked: a pending card choice (pick indices 129-138 refer to these).` },
+    ];
+    const bar = document.getElementById('segbar'), info = document.getElementById('segInfo'), tbl = document.getElementById('segTable');
+    tbl.innerHTML = '<tr><th>segment</th><th>offset</th><th>bytes</th></tr>' + segs.map(x => `<tr><td>${x.n}</td><td><code>${x.a}</code></td><td><code>${x.b - x.a}</code></td></tr>`).join('') + `<tr><td><b>total</b></td><td></td><td><code>OBS_BYTES = ${OBS_BYTES}</code></td></tr>`;
+    segs.forEach(x => {
+      const d = Course.el('div', { style: `flex:${x.b - x.a};background:${x.c}` }, [x.n]);
+      const show = () => { info.innerHTML = `<b style="color:${x.c}">${x.n}</b> · bytes ${x.a}–${x.b - 1} (${x.b - x.a} bytes). ${x.d}`; };
+      d.addEventListener('mouseenter', show); d.addEventListener('click', show);
+      bar.appendChild(d);
+    });
+
+    Course.quiz('#quiz', [
+      { q: 'The mask has a 1 for "End turn" while you still have 3 energy and two Strikes. What does that tell the agent?', choices: ['That ending the turn is a reasonable choice here', 'Only that the engine will accept the action', 'That the enemy is about to Bellow'], answer: 1, why: 'Legal is not good. The mask removes impossible actions; choosing among the possible ones is the whole learning problem.', hint: 'Think back to the uniformly random agent.' },
+      { q: 'In SpireZero, what is index 0 × 8 + 2 = 2?', choices: ['Play hand slot 0 at enemy slot 1', 'Play hand slot 2 with no target', 'Use potion 0 at enemy slot 2'], answer: 0, why: 'Play indices are hand_slot × 8 + target_slot; target 0 is "no target / self" and 1-7 are enemy slots, so 2 is enemy slot 1.', hint: 'Target slot 0 is "no target". Click cell 2 in the grid.' },
+      { q: 'Why does the observation list every card in creation order instead of draw-pile order?', choices: ['Creation order is faster to write', 'So the agent cannot see the hidden order of the draw pile', 'Because the draw pile is not part of the state'], answer: 1, why: 'The real game hides the draw order. An observation that leaked it would train an agent on information a player never has.', hint: 'What does the real game let you see about your draw pile?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

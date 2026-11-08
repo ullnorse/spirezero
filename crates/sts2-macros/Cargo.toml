@@ -1,0 +1,14 @@
+[package]
+name = "sts2-macros"
+description = "Proc macros for sts2-core's hook dispatch."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true

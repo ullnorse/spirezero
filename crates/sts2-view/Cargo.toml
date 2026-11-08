@@ -1,0 +1,16 @@
+[package]
+name = "sts2-view"
+description = "The presentation model shared by the TUI, the iOS app and any future client: text with roles, names, descriptions and the out-of-combat menus (docs/specs/clients.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sts2-core = { path = "../sts2-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

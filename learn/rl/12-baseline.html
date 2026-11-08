@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why REINFORCE stalled</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="12-baseline">
+<main>
+  <div class="kicker">Week 3 · Day 12</div>
+  <h1>Why REINFORCE stalled</h1>
+  <p class="lead">Day 9's agent beat random and then stopped at 76%: attacks first, always, even with a lethal Chomp coming and a Defend in hand. Day 6's table learned that block. Today finds out why the net did not, with three suspects: the representation, the variance of the gradient, and a policy that stops exploring.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>A policy gradient only moves what it can see. The lethal state is rare, the advantage of blocking in it is small (you survive, then usually die anyway), and the net had to compute "damage through block ≥ HP" from two normalised numbers with one tanh layer. Fix the representation and the signal appears; a baseline and an entropy bonus then make it usable.</p>
+  </div>
+
+  <h2>Suspect 1 · the net could not say "lethal"</h2>
+  <p>Day 9's features include HP/28 and through/28, the damage that would reach you. The decision needs their <i>difference</i>'s sign, a step function of the two, and the gradient from a few dozen rare visits never carves it out of a 64-unit tanh layer. Two extra bits, <code>lethal</code> (through ≥ HP) and <code>kill</code> (enemy within one Strike), make both decisions linear in the inputs. With them, the block becomes learnable: the runs that find it reach P(Defend | lethal) above 0.8 and a greedy win rate above the hand-written rule. Whether a given run finds it is the next two suspects' business.</p>
+  <p>This is the lesson of day 14 in miniature: on the real env the same mistake is a multi-hot of card kinds that cannot say <i>which slot</i> holds the Strike.</p>
+
+  <h2>Suspect 2 · variance</h2>
+  <p>REINFORCE weights each log-probability by the whole return G<sub>t</sub>. In a fight that was already won, every action gets +1; in a lost one, −1; the sign of the update says nothing about the action. Subtracting a baseline b leaves (G<sub>t</sub> − b), the same expectation and a fraction of the variance. Day 9 used a running mean of returns. A <b>critic</b> V(s) is a baseline per state: the advantage G<sub>t</sub> − V(s<sub>t</sub>) is "did this go better than this state usually goes", which is the quantity the lethal state needs: V is already about −1 there, so a survival stands out.</p>
+  <p>The critic is a second head on the same body, trained by squared error to G<sub>t</sub>. Its gradient must not flow into the advantage (detach it), or the policy loss starts training the value head.</p>
+
+  <h2>Suspect 3 · the policy stopped visiting</h2>
+  <p>Once P(Strike) is 0.95 everywhere, the Defend-in-a-lethal-state sample arrives one time in twenty, and the sign of its rare advantage is drowned by the other nineteen. An <b>entropy bonus</b> adds +β·H(π(·|s)) to the objective: it costs a little win rate while the policy is spread out and keeps the rare action sampled long enough for its advantage to accumulate. On the real env it is the <code>ENT</code> coefficient of day 10's loss.</p>
+
+  <div class="toy">
+    <div class="kicker">Toy · which fix does what</div>
+    <p>The exercise's eight combinations on the mini fight (3,000 episodes each, seed 0, batch 25). Click to compare: the probe is day 9's lethal state, HP 7 with 5 block against a 12-damage Chomp, a Strike and a Defend in hand.</p>
+    <div class="row">
+      <label><input type="checkbox" id="feat"> lethal + kill bits</label>
+      <label><input type="checkbox" id="crit"> critic baseline</label>
+      <label><input type="checkbox" id="ent"> entropy bonus 0.03</label>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">greedy win rate</div><div class="v" id="wr">–</div></div>
+      <div class="tile"><div class="k">P(Defend | lethal)</div><div class="v" id="pd">–</div></div>
+    </div>
+    <canvas id="chart" height="180"></canvas>
+    <p class="muted" id="verdict"></p>
+  </div>
+  <p>Read: without the feature nothing learns the block, whatever the optimiser does. With the feature but without a baseline the run is a coin flip between strike-first and a turtle that never kills: the same code with batch 16 instead of 25 lands on the other side. Only all three together are reliable on this seed. On the real env the ordering is the same: representation first, then variance, then exploration, and a result that depends on the seed is a result you do not have yet.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>learn/rl/exercises/common/minifight.py</code></span>: <code>State.incoming()</code>, the number the lethal bit compares with HP; <code>heuristic_policy</code>, the hand-written rule at 0.80.</li>
+      <li><span class="path"><code>learn/rl/exercises/solutions/week2/day10_ppo.py</code></span>: <code>update</code>, where the same three pieces already sit: GAE's advantage against <code>val</code>, <code>ent_coef</code>, and the features from day 8.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>For any b that does not depend on the action, E<sub>a∼π</sub>[∇ log π(a|s) · b] = b · ∇ Σ<sub>a</sub> π(a|s) = b · ∇1 = 0, so subtracting a baseline leaves the expected gradient unchanged. The variance-minimising baseline is close to V(s), which is why the critic is the standard choice.</p>
+      <div class="formula">L = −E[log π(a<sub>t</sub>|s<sub>t</sub>) · (G<sub>t</sub> − V(s<sub>t</sub>))] + c<sub>v</sub> E[(V(s<sub>t</sub>) − G<sub>t</sub>)²] − β E[H(π(·|s<sub>t</sub>))]</div>
+      <p>The entropy of a masked softmax over k legal actions is at most log k, so β·log 3 ≈ 0.03 is the most the bonus can be worth per step on the mini fight; on the real env with 20 legal actions, β·log 20.</p>
+    </div>
+  </details>
+
+  <script>
+    Course.init();
+    const $ = id => document.getElementById(id);
+    // Numbers from the exercise's reference runs (seed 0, 3,000 episodes).
+    const RUNS = {
+      '000': { wr: 0.756, pd: 0.00, curve: [0.04, 0.36, 0.76, 0.71, 0.77, 0.8, 0.73, 0.75, 0.74, 0.75, 0.77, 0.77], v: "Day 9 as it was: strike first, never the lethal block." },
+      '001': { wr: 0.070, pd: 0.38, curve: [0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], v: "Entropy without a baseline: the spread-out policy wandered into the turtle attractor (Defend whenever possible, never kill) and the whole-return weighting locked it there." },
+      '010': { wr: 0.756, pd: 0.01, curve: [0.04, 0.28, 0.63, 0.72, 0.75, 0.7, 0.76, 0.74, 0.75, 0.7, 0.75, 0.72], v: "A critic alone: lower variance, the same strike-first policy. There is no lethal signal to find." },
+      '011': { wr: 0.756, pd: 0.02, curve: [0.01, 0.05, 0.29, 0.62, 0.67, 0.74, 0.7, 0.76, 0.72, 0.72, 0.76, 0.71], v: "Critic and entropy without the feature: P(Defend | lethal) stays at 0.02. Variance reduction cannot create a signal the net cannot express." },
+      '100': { wr: 0.000, pd: 0.99, curve: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], v: "The feature alone, this seed: collapsed to the turtle. The lethal bit makes Defend easy to prefer; without a baseline, every action of a lost fight is pushed down with the same \u22121, and the run never recovers. Batch 16 instead of 25 learns the block fine, which is what seed-fragile means." },
+      '101': { wr: 0.756, pd: 0.00, curve: [0.0, 0.0, 0.0, 0.0, 0.0, 0.04, 0.13, 0.66, 0.74, 0.7, 0.76, 0.72], v: "Feature plus entropy: slow start, then the strike-first policy with the block still unlearned (P(Defend) 0.00). The bonus keeps the policy alive; the variance hides the signal." },
+      '110': { wr: 0.001, pd: 0.98, curve: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], v: "Feature plus critic, entropy 0: the turtle again. A near-deterministic early policy stops sampling Strike in the states where it matters." },
+      '111': { wr: 0.814, pd: 0.85, curve: [0.0, 0.0, 0.0, 0.02, 0.14, 0.59, 0.7, 0.79, 0.72, 0.78, 0.81, 0.77], v: "All three: 0.81 greedy, above the hand-written rule, P(Defend | lethal) 0.85. The feature supplies the signal, the critic makes it visible, the bonus keeps the states visited." },
+    };
+    function show() {
+      const k = ['feat', 'crit', 'ent'].map(id => $(id).checked ? '1' : '0').join('');
+      const r = RUNS[k];
+      $('wr').textContent = r.wr.toFixed(3); $('pd').textContent = r.pd.toFixed(2);
+      Course.lineChart($('chart'), [{ name: 'training win rate', data: r.curve.map((v, i) => [(i + 1) * 250, v]), dots: true }], { ymin: 0, ymax: 1, xlabel: 'episodes', hlines: [{ y: 0.80, label: 'hand-written rule', color: '--fg3' }], yfmt: v => (100 * v).toFixed(0) + '%' });
+      $('verdict').textContent = r.v;
+    }
+    ['feat', 'crit', 'ent'].forEach(id => $(id).addEventListener('change', show)); show();
+
+    Course.quiz('#quiz', [
+      { q: 'Subtracting V(s) from the return changes which of these?', choices: ['The expected gradient', 'The variance of the gradient', 'The optimal policy'], answer: 1, why: 'The baseline term has zero expectation under the policy; only the noise shrinks.', hint: 'See the first line of the math.' },
+      { q: 'The critic and the entropy bonus did nothing without the feature. Why?', choices: ['They were tuned wrong', 'The net could not represent the lethal comparison, so there was no advantage signal whose variance mattered', 'The mini fight has too few states'], answer: 1, why: 'Variance reduction helps a weak signal; it cannot create one. Check what the net can express before tuning the optimiser.', hint: 'What does P(Defend | lethal) look like in the three runs without the feature?' },
+      { q: 'Why detach the value when forming the advantage?', choices: ['To save memory', 'So the policy loss does not push the value head toward whatever makes the advantage large', 'Because V has no gradient'], answer: 1, why: 'The value head is trained by its own squared error only. Through the advantage it would learn to inflate itself for taken actions.', hint: 'Which loss should train the critic?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

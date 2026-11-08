@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training on real StS2</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="08-spirezero">
+<main>
+  <div class="kicker">Week 2 · Day 10</div>
+  <h1>Training on real StS2 with SpireZero</h1>
+  <p class="lead">Everything so far was the mini fight. This lesson walks the same loop through the real env: what the observation needs to become before a net can use it, how the mask enters the policy, what reward to give and what goes wrong when you get clever, how to order the fights, and how much compute a run takes.</p>
+
+  <h2>1. The env you already have</h2>
+  <p>After <code>cargo build --profile ffi -p sts2-ffi</code>, Python gets a batch of N fights behind one object:</p>
+  <pre><code>from sts2 import Sts2PufferEnv
+env = Sts2PufferEnv(num_envs=256, threads=4)   # 256 fights, 4 engine threads
+obs, _ = env.reset()                           # uint8, shape (256, 972), engine memory, zero copy
+mask = env.action_masks                        # bool,  shape (256, 140)
+obs, reward, done, trunc, info = env.step(actions)   # actions: int per env, must be masked-legal</code></pre>
+  <p>Each env is one fight from a <b>start corpus</b> (real Act 1 positions harvested from greedy runs: deck, relics, HP, encounter, RNG streams). When a fight ends the env resets to the next start by itself. <code>reward</code> is +1 / −1 / 0, exactly the mini fight's. An illegal action raises; nothing is applied. The static part of the observation (deck, relics, belt) is in <code>env.batch.static_obs</code>, rewritten at each reset.</p>
+
+  <h2>2. From 972 bytes to features</h2>
+  <p>Day 8 said a net generalizes only along directions its inputs make easy. Raw bytes divided by 255 technically work and are a fine first experiment, but they hide structure a net has to rediscover: a card id is a category, not a magnitude; HP matters as a fraction of max; a power's amount means nothing without its kind. The table is a reasonable featuriser for a second experiment. The offsets are day 2's.</p>
+  <table>
+    <tr><th>segment</th><th>in the buffer</th><th>feature</th></tr>
+    <tr><td>header</td><td>HP, max HP, block, energy, pile sizes, status</td><td>HP/maxHP, block/maxHP, energy/maxEnergy, pile sizes /deck size, turn/20: about 12 floats</td></tr>
+    <tr><td>creatures ×8</td><td>alive, monster kind, HP, block, 12 powers as (kind, amount)</td><td>per creature: alive, HP fraction, block fraction, monster embedding (16-d), sum over powers of embedding(kind) · scaled amount</td></tr>
+    <tr><td>cards ×64</td><td>kind, upgrade, pile, cost, flags</td><td>per card: card embedding (32-d) + upgrade + pile one-hot (6) + cost + flag bits; pool by pile (mean over hand, draw, discard, exhaust) so the deck's composition is visible</td></tr>
+    <tr><td>hand ×10</td><td>card ids in hand order</td><td>gather the card features above by id; these ten vectors are what play index h × 8 + t refers to</td></tr>
+    <tr><td>intents ×8</td><td>kind, damage, hits, status cards</td><td>intent kind one-hot, damage × hits / your HP, status cards; also "total incoming / HP" as one scalar, the mini fight's "danger"</td></tr>
+    <tr><td>choice ×10</td><td>option ids, min, max, picked</td><td>gather card features for the options; min/max/picked as scalars</td></tr>
+    <tr><td>static</td><td>character, ascension, encounter, deck, relics, belt</td><td>embeddings for encounter and relics; the deck is already covered by the cards segment</td></tr>
+  </table>
+  <p>Two structural points. First, <b>the action space is aligned with the hand slots</b>: a policy head that scores "play hand slot h" should see hand slot h's features, not a flattened blob. Index arithmetic in the net mirrors <code>action.rs</code>. Second, the vocab ids are append-only, so your embedding tables stay valid when the engine gains cards; pass <code>vocab_hash=</code> to the env to refuse a mismatched build.</p>
+
+  <h2>3. The mask in the policy</h2>
+  <pre><code>logits = head(features)                             # (N, 140)
+logits = logits.masked_fill(~mask, -1e9)            # illegal → probability 0
+dist = torch.distributions.Categorical(logits=logits)
+action = dist.sample()                              # always legal
+logp = dist.log_prob(action); entropy = dist.entropy()</code></pre>
+  <p>Mask in the <i>logits</i>, before the softmax, in both rollout and update. If you mask only at sampling time the policy gradient will spend capacity learning not to pick illegal actions, and the entropy term will count them. Keep the 140-wide layout even though most cells are usually dark (day 2): the net learns that hand slot 7 is rarely legal, and that is fine.</p>
+
+  <h2>4. Reward: sparse, shaped, and hacked</h2>
+  <p>+1/−1 is honest and hard: the signal arrives once per fight after 20–40 decisions. <b>Shaping</b> adds intermediate rewards to help, and it is the single easiest way to train an agent to do the wrong thing well. Try it on the mini fight.</p>
+  <div class="toy">
+    <div class="kicker">Toy · reward design, same learner</div>
+    <div class="row">
+      <label>reward <select id="rew">
+        <option value="sparse">sparse: +1 win, −1 loss</option>
+        <option value="damage">+0.03 per damage dealt, plus win/loss</option>
+        <option value="hp">−0.03 per HP lost, plus win/loss</option>
+        <option value="hpbonus">win/loss, plus +0.02 × remaining HP on a win</option>
+        <option value="turns">win/loss, −0.05 per turn (hurry up)</option>
+      </select></label>
+      <button class="primary" id="go">Train 15,000 episodes</button>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">greedy win rate</div><div class="v" id="wr">–</div></div>
+      <div class="tile"><div class="k">mean HP left after a win</div><div class="v" id="hp">–</div></div>
+      <div class="tile"><div class="k">Defends played per fight</div><div class="v" id="def">–</div></div>
+      <div class="tile"><div class="k">mean turns</div><div class="v" id="turns">–</div></div>
+    </div>
+    <canvas id="chart" height="200"></canvas>
+    <div id="verdict" class="muted"></div>
+  </div>
+  <p>Expected pattern: "+ per damage dealt" makes a berserker (damage is paid now, death is paid later and discounted); "− per HP lost" makes a turtle that can lose slowly; the HP bonus on a win is the safest of the shaped rewards because it only pays when the real objective is met; the turn penalty speeds things up at a cost. Rules of thumb for the real game: start sparse; if you shape, make it a small fraction of the terminal reward and tie it to things that are <i>consequences</i> of winning (HP left, potions kept), not <i>proxies</i> for it (damage dealt); and measure the thing you actually care about separately from the reward.</p>
+  <p>For whole runs (stage 9's run env) the sparse reward is already there (+1 victory, −1 otherwise, with the floor reached in <code>infos</code>); a per-floor shaping is the obvious next step, and the same warning applies twice as hard, because the agent gets to choose its own fights.</p>
+
+  <h2>5. Which fights, in what order</h2>
+  <ul>
+    <li><b>Curriculum.</b> The start corpus mixes trivial fights with Act 1 elites. A random policy already wins 34% of Act 1 starts, so the early signal is there. Sort starts by the random (or greedy) policy's win rate and feed the easy half first, then widen. Measure on the full corpus always.</li>
+    <li><b>Per-character.</b> Five characters share one observation layout and one action space; a single net can learn all five (the character is in the static part), but training on one first makes debugging simpler.</li>
+    <li><b>Fights, then runs.</b> The fight env (stage 7) trains the combat policy. The run env (stage 9) then plays whole runs, either with the agent making every decision or with <code>combat="greedy"</code> so it only learns the map, shop and reward choices at first. Hybrid modes exist so the two policies can be developed separately and combined.</li>
+    <li><b>Self-play</b> does not apply: no opponent adapts. Its cousin, <b>evaluating against fixed references</b> (random, greedy, your previous checkpoints) on a fixed seed set, is what keeps progress honest.</li>
+  </ul>
+
+  <h2>6. How much compute</h2>
+  <div class="toy">
+    <div class="kicker">Toy · steps, fights, hours</div>
+    <div class="row">
+      <label>env steps/s per core <input type="range" id="sps" min="100000" max="800000" step="50000" value="300000"> <span class="val" id="spsV">300k</span></label>
+      <label>cores <input type="range" id="cores" min="1" max="16" value="4"> <span class="val" id="coresV">4</span></label>
+      <label>steps per fight <input type="range" id="spf" min="15" max="60" value="30"> <span class="val" id="spfV">30</span></label>
+      <label>net forward+backward, steps/s <input type="range" id="gpu" min="20000" max="500000" step="10000" value="100000"> <span class="val" id="gpuV">100k</span></label>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">env throughput</div><div class="v" id="envT">–</div></div>
+      <div class="tile"><div class="k">bottleneck</div><div class="v" id="bott">–</div></div>
+      <div class="tile"><div class="k">fights per hour</div><div class="v" id="fph">–</div></div>
+      <div class="tile"><div class="k">time to 100M steps</div><div class="v" id="t100">–</div></div>
+      <div class="tile"><div class="k">time to 1B steps</div><div class="v" id="t1b">–</div></div>
+    </div>
+    <p class="muted">Measured points from <code>docs/perf.md</code>: Rust through the ABI 483k steps/s per core, Python with the numpy random policy 310k (64 envs) to 349k (256 envs), the in-process fight env 798k. Random play averages about 23 actions per fight; a competent agent plays longer. Atari agents typically need 10M–200M steps; AlphaStar-scale efforts, billions.</p>
+  </div>
+  <p>The honest reading: with the engine this fast, <b>the environment stops being the bottleneck almost immediately</b>. A mid-size net evaluated on a GPU in batches of a few thousand observations tops out well below a million steps a second, and that is before PPO's update epochs. That changes what to optimise next: batch size, a model small enough to keep up, and keeping the GPU fed, not more engine speed. The engine's job was to make this the problem, and it has done it.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>python/sts2/env.py</code></span>: <code>Sts2Envs</code> (raw buffers), <code>Sts2PufferEnv</code> (fights), <code>Sts2RunEnvs</code> / <code>Sts2RunPufferEnv</code> (whole runs, <code>combat=</code> modes), the +1/−1 reward lines, <code>vocab_hash=</code>, <code>StaleBuild</code>.</li>
+      <li><span class="path"><code>python/README.md</code></span>: build, smoke tests and benchmarks.</li>
+      <li><span class="path"><code>crates/sts2-ffi/include/sts2.h</code></span>: the C ABI the binding wraps; <span class="path"><code>crates/sts2-ffi/examples/ffi_bench.rs</code></span> plays the same trajectories from Rust, so Python and Rust can be cross-checked by digest.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/start.rs</code></span>: the start corpus (<code>cargo xtask sweep --policy greedy --emit-starts FILE</code>); <span class="path"><code>crates/sts2-rl/src/run_envs.rs</code></span> and <span class="path"><code>crates/sts2-rl/src/resolve.rs</code></span>: the run env and its hybrid combat modes.</li>
+      <li><span class="path"><code>crates/sts2-bench/src/rl.rs</code></span>: <code>cargo xtask bench --mode rl</code>, the engine-side step benchmark; <span class="path"><code>docs/perf.md</code></span>: every number quoted above.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p><b>Potential-based shaping</b> is the one kind of shaping guaranteed not to change the optimal policy: add F(s, s′) = γΦ(s′) − Φ(s) for any function Φ of the state. "−0.03 per HP lost" is of that form with Φ(s) = 0.03 · HP(s) (and γ = 1), which is why it is less harmful than "per damage dealt" (which is not a potential: it depends on what the <i>enemy</i> lost, and sums to a different total along different paths to the same win). Even a potential-based term changes what is learned quickly, so the toy still shows a turtle.</p>
+      <p><b>Sample budget.</b> PPO iteration cost ≈ N·T env steps + E·(N·T/B) gradient steps on minibatches of B. With N = 256, T = 128, E = 4, B = 4096: 32,768 env steps (≈0.1 s at 300k steps/s) and 32 gradient steps per iteration. The gradient steps dominate as soon as the model has more than a few million parameters.</p>
+    </div>
+  </details>
+
+  
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    const F = Fight;
+    const $ = id => document.getElementById(id);
+    const REWARDS = {
+      sparse: null,
+      damage: (b, a, s, r) => r + 0.03 * ((b.enemyHp - s.enemyHp)),
+      hp: (b, a, s, r) => r - 0.03 * (b.playerHp - s.playerHp),
+      hpbonus: (b, a, s, r, done) => r + (done && s.won ? 0.02 * s.playerHp : 0),
+      turns: (b, a, s, r) => r - (a === F.END ? 0.05 : 0),
+    };
+    $('go').addEventListener('click', () => {
+      const fn = REWARDS[$('rew').value];
+      const agent = F.QAgent({ key: F.coarseKey, alpha: 0.1, eps: 0.1, gamma: 0.99, rewardFn: fn, rand: Course.rng(17) });
+      const curve = []; let n = 0;
+      const loop = Course.runLoop(() => {
+        for (let i = 0; i < 300 && n < 15000; i++) { agent.episode(); n++; if (n % 1000 === 0) curve.push([n, F.evaluate(agent.policy, 300, n).winRate]); }
+        Course.lineChart($('chart'), [{ name: 'greedy win rate', data: curve, dots: true }], { ymin: 0, ymax: 1, xlabel: 'episodes', yfmt: v => (100 * v).toFixed(0) + '%' });
+        if (n >= 15000) {
+          const rand = Course.rng(99); let w = 0, hp = 0, defs = 0, turns = 0;
+          for (let i = 0; i < 1000; i++) { let d = 0; const s = F.play((st, m) => { const a = agent.greedy(st, m); if (a === F.DEFEND) d++; return a; }, rand); if (s.won) { w++; hp += s.playerHp; } defs += d; turns += s.turn; }
+          $('wr').textContent = Course.pct(w / 1000); $('hp').textContent = w ? (hp / w).toFixed(1) : '–'; $('def').textContent = (defs / 1000).toFixed(2); $('turns').textContent = (turns / 1000).toFixed(1);
+          const k = $('rew').value;
+          $('verdict').textContent = { sparse: 'Baseline. Compare the others against this win rate.', damage: 'Watch the Defends-per-fight count. Damage is rewarded immediately; dying is a −1 that arrives later. The agent learns a proxy.', hp: 'Fewer HP lost, but does it win more? Blocking is rewarded even when striking would have ended the fight.', hpbonus: 'Only pays when the real objective is met, so it can only bias how to win, not whether to.', turns: 'Shorter fights; check whether the win rate paid for it.' }[k];
+          return false;
+        }
+        return true;
+      }, 14);
+    });
+    // compute calculator
+    function fmtK(v) { return v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : (v / 1e3).toFixed(0) + 'k'; }
+    function fmtT(sec) { if (sec < 3600) return (sec / 60).toFixed(0) + ' min'; if (sec < 86400 * 2) return (sec / 3600).toFixed(1) + ' h'; return (sec / 86400).toFixed(1) + ' days'; }
+    function calc() {
+      const sps = +$('sps').value, cores = +$('cores').value, spf = +$('spf').value, gpu = +$('gpu').value;
+      $('spsV').textContent = fmtK(sps); $('coresV').textContent = cores; $('spfV').textContent = spf; $('gpuV').textContent = fmtK(gpu);
+      const envT = sps * cores, eff = Math.min(envT, gpu);
+      $('envT').textContent = fmtK(envT) + ' steps/s'; $('bott').textContent = envT < gpu ? 'environment' : 'the network';
+      $('fph').textContent = Course.fmtInt(eff / spf * 3600); $('t100').textContent = fmtT(1e8 / eff); $('t1b').textContent = fmtT(1e9 / eff);
+    }
+    ['sps', 'cores', 'spf', 'gpu'].forEach(k => $(k).addEventListener('input', calc)); calc();
+
+    Course.quiz('#quiz', [
+      { q: 'Where should the legal-action mask be applied in a PPO policy?', choices: ['Only when sampling actions during rollouts', 'In the logits before the softmax, during both rollouts and updates', 'In the reward, by penalising illegal actions'], answer: 1, why: 'Masking the logits makes illegal actions have zero probability everywhere: in sampling, in the log-probabilities the update uses, and in the entropy.', hint: 'Which quantities does the update compute from the distribution?' },
+      { q: 'Why is "+ per damage dealt" a worse shaping term than "+ HP remaining on a win"?', choices: ['Damage numbers are larger', 'Damage is a proxy that pays now even on the way to a loss; HP-on-win pays only when the real objective is achieved', 'Because HP is in the header segment'], answer: 1, why: 'Shaping that can be earned without winning teaches the agent to earn it instead of winning. Tie shaping to consequences of the goal, not to proxies.', hint: 'Which of the two can an agent collect in a fight it loses?' },
+      { q: 'With the engine at 300k steps/s per core and a net that handles 100k steps/s, what should you optimise first?', choices: ['The engine', 'The network and batch size: it is the bottleneck', 'The reward function'], answer: 1, why: 'The calculator shows the slower of the two sets throughput. A fast engine moves the bottleneck to the model, which is where it should be.', hint: 'Set the sliders to those values and read the "bottleneck" tile.' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

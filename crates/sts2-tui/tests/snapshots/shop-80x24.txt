@@ -1,0 +1,24 @@
+                 ♥ 268/999   ◉ 300   Floor 6           Tab ≡
+                 ──────────────────────────────────────────────
+                 z ◈ Fire   c ◈ Block                ◆ 2 relics
+
+                                      Shop
+
+                 ┌────────────────────────────────────────────┐
+                 │▸1  Cards                            5 cards│
+                 │ 2  Colorless cards                  2 cards│
+                 │ 3  Relics                          3 relics│
+                 │ 4  Potions                        3 potions│
+                 │ 5  Remove a card                       75 ◉│
+                 └────────────────────────────────────────────┘
+
+                      ╔═════════════════════════════════╗
+                      ║       6   Leave the shop        ║
+                      ╚═════════════════════════════════╝
+
+
+
+
+
+
+                   ↑↓ move · Enter choose · 1-6 pick · ? help

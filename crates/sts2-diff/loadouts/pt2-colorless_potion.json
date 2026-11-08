@@ -1,0 +1,1 @@
+{"potions": ["COLORLESS_POTION", "COLORLESS_POTION"], "encounters": [], "note": "No regress runs yet: the potion offers 3 random Colorless pool cards and generation panics on an unported one (AUTOMATION, BEAT_DOWN, NOSTALGIA, PANACHE, ROLLING_BOULDER, SPLASH, THE_BOMB, VOLLEY). Drop the encounters key once the pool is ported."}

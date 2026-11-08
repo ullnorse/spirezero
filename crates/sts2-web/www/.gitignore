@@ -1,0 +1,8 @@
+pkg/
+pkg-bot/
+# The game text, linked in by serve.sh from ~/.cache/spirebot-data/text: never commit it.
+text
+# The player's game art, linked in by serve.sh from ~/.cache/spirebot-data/art: never commit it.
+art
+# The game's sounds, linked in by serve.sh from ~/.cache/spirebot-data/audio (tools/audio_import.py): never commit them.
+audio

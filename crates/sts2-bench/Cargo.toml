@@ -1,0 +1,25 @@
+[package]
+name = "sts2-bench"
+description = "Engine throughput benchmark: random-play fights and whole runs per second (`cargo xtask bench`)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sts2-core = { path = "../sts2-core" }
+sts2-kernel = { path = "../sts2-kernel" }
+sts2-rl = { path = "../sts2-rl" }
+# The global allocator (decisions.md 2026-10-23, speed dependencies): the engine's short-lived
+# `Vec`s cost far less than with glibc's malloc.
+mimalloc = { version = "0.1", default-features = false, optional = true }
+
+[features]
+default = ["mimalloc"]
+# Off: the system allocator, as the TUI has. `cargo xtask package` trains the TUI's PGO profile so
+# (the engine's counts are the same either way), which also needs no C compiler for the target.
+mimalloc = ["dep:mimalloc"]

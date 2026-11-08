@@ -1,0 +1,48 @@
+# Godot node singletons that game logic reads without dereferencing at once (a local, an argument, a result that is not a node),
+# so referee/nullguard does not guard them. Each is reviewed: null-checked before use or off the headless path (TestMode.IsOn,
+# no card nodes, multiplayer only). referee/nullguard fails the build on a new one and on an entry here that is gone.
+# Format: <method> <singleton chain>  # why it is safe headless
+MegaCrit.Sts2.Core.Combat.CombatManager/<WaitForUnpause>d__147::MoveNext NGame.Instance.AwaitProcessFrame  # only while paused, or a TestMode.IsOff branch
+MegaCrit.Sts2.Core.Combat.CombatStateTracker/<CallCombatStateChangedDeferred>d__32::MoveNext NRun.Instance  # null-checked (instance?.GetTreeOrNull())
+MegaCrit.Sts2.Core.Commands.CardCmd::PreviewInternal NCombatRoom.Instance.get_Ui.get_CardPreviewContainer  # returns first when TestMode.IsOn
+MegaCrit.Sts2.Core.Commands.CardCmd::PreviewInternal NCombatRoom.Instance.get_Ui.get_MessyCardPreviewContainer  # returns first when TestMode.IsOn
+MegaCrit.Sts2.Core.Commands.CardCmd/<Transform>d__13::MoveNext NCombatRoom.Instance.get_Ui.get_Hand  # !TestMode.IsOn branch
+MegaCrit.Sts2.Core.Commands.CardCmd/<Transform>d__13::MoveNext NCombatRoom.Instance.get_Ui.get_PlayQueue  # !TestMode.IsOn branch
+MegaCrit.Sts2.Core.Commands.CardPileCmd::GetTweenForCardsChangingPiles NRun.Instance.get_GlobalUi.get_TopBar.get_TrailContainer  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardPileCmd::MoveCardNodeToNewPileBeforeTween NCombatRoom.Instance.get_Ui.get_Hand  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardPileCmd::MoveCardNodeToNewPileBeforeTween NCombatRoom.Instance.get_Ui.get_PlayContainer  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardPileCmd::MoveCardNodeToNewPileBeforeTween NCombatRoom.Instance.get_Ui.get_PlayQueue  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardPileCmd/<>c__DisplayClass12_1::<GetTweenForCardsChangingPiles>b__1 NCombatRoom.Instance  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardPileCmd/<>c__DisplayClass3_0::<RemoveFromCombat>b__0 NCombatRoom.Instance  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardPileCmd/<Add>d__10::MoveNext NCombatRoom.Instance  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardPileCmd/<AddDuringManualCardPlay>d__13::MoveNext NCombatRoom.Instance  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardPileCmd/<AddDuringManualCardPlay>d__13::MoveNext NCombatRoom.Instance.CreateTween.SetParallel  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardPileCmd/<GiveToAnotherPlayer>d__4::MoveNext NCombatRoom.Instance  # multiplayer only
+MegaCrit.Sts2.Core.Commands.CardPileCmd/<RemoveFromCombat>d__3::MoveNext NCombatRoom.Instance  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardPileCmd/<Shuffle>d__22::MoveNext NCombatRoom.Instance  # card-node visuals: only with an NCard (none headless), or null-checked
+MegaCrit.Sts2.Core.Commands.CardSelectCmd/<FromHand>d__28::MoveNext NCombatRoom.Instance.get_Ui.get_Hand.SelectCards  # else branch of CardSelectCmd.LocalSelector, which sts2-cli sets
+MegaCrit.Sts2.Core.Commands.CardSelectCmd/<FromHandForUpgrade>d__30::MoveNext NCombatRoom.Instance.get_Ui.get_Hand  # else branch of CardSelectCmd.LocalSelector, which sts2-cli sets
+MegaCrit.Sts2.Core.Commands.CreatureCmd/<Heal>d__20::MoveNext NMerchantRoom.Instance  # passed to PlayerFullscreenHealVfx.Play, which returns when TestMode.IsOn or the container is null
+MegaCrit.Sts2.Core.Commands.ForgeCmd::PreviewSovereignBlade NCombatRoom.Instance.get_Ui.get_Hand.GetCard  # returns first when TestMode.IsOn
+MegaCrit.Sts2.Core.Entities.Creatures.Creature::GetBackVfxContainer NBestiary.Instance.get_BackVfxContainer  # after NCombatRoom/NBestiary.Instance?.GetCreatureNode(this) != null
+MegaCrit.Sts2.Core.Entities.Creatures.Creature::GetBackVfxContainer NCombatRoom.Instance.get_BackCombatVfxContainer  # after NCombatRoom/NBestiary.Instance?.GetCreatureNode(this) != null
+MegaCrit.Sts2.Core.Entities.Creatures.Creature::GetVfxContainer NBestiary.Instance.get_VfxContainer  # after NCombatRoom/NBestiary.Instance?.GetCreatureNode(this) != null
+MegaCrit.Sts2.Core.Entities.Creatures.Creature::GetVfxContainer NCombatRoom.Instance.get_CombatVfxContainer  # after NCombatRoom/NBestiary.Instance?.GetCreatureNode(this) != null
+MegaCrit.Sts2.Core.Entities.RestSite.MendRestSiteOption/<OnSelect>d__10::MoveNext NRestSiteRoom.Instance.characterAnims  # offered only with more than one player
+MegaCrit.Sts2.Core.Entities.RestSite.MendRestSiteOption/<OnSelect>d__10::MoveNext NRestSiteRoom.Instance.GetButtonForOption  # offered only with more than one player
+MegaCrit.Sts2.Core.Entities.RestSite.MendRestSiteOption/<OnSelect>d__10::MoveNext NTargetManager.Instance  # offered only with more than one player
+MegaCrit.Sts2.Core.GameActions.ActionExecutor/<WaitForUnpause>d__31::MoveNext NGame.Instance.AwaitProcessFrame  # only while paused, or a TestMode.IsOff branch
+MegaCrit.Sts2.Core.GameActions.MoveToMapCoordAction/<ExecuteAction>d__7::MoveNext NMapScreen.Instance.TravelToMapCoord  # TestMode.IsOff branch
+MegaCrit.Sts2.Core.Models.AncientEventModel/<BeforeEventStarted>d__62::MoveNext NRun.Instance.get_GlobalUi.get_TopBar.get_Hp.LerpAtNeow  # after NRun.Instance != null
+MegaCrit.Sts2.Core.Models.CardModel/<PlayPowerCardFlyVfx>d__341::MoveNext NCombatRoom.Instance.get_CombatVfxContainer.GetChildren  # only with a card node (NCard.FindOnTable), none headless
+MegaCrit.Sts2.Core.Models.Cards.BouncingFlask/<OnPlay>d__6::MoveNext NCombatRoom.Instance.GetCreatureNode  # TestMode.IsOff branch
+MegaCrit.Sts2.Core.Models.Potions.FoulPotion::GetFoulPotionMerchantTarget NMerchantRoom.Instance  # null-checked local
+MegaCrit.Sts2.Core.Models.Powers.SandpitPower::AfterApplied NCombatRoom.Instance.GetCreatureNode  # returns when TestMode.IsOn, or a TestMode.IsOff branch
+MegaCrit.Sts2.Core.Models.Powers.SandpitPower/<AfterRemoved>d__14::MoveNext NCombatRoom.Instance.CreateTween  # returns when TestMode.IsOn, or a TestMode.IsOff branch
+MegaCrit.Sts2.Core.Models.Powers.SandpitPower/<UpdateCreaturePositions>d__18::MoveNext NCombatRoom.Instance  # returns when TestMode.IsOn, or a TestMode.IsOff branch
+MegaCrit.Sts2.Core.Models.Powers.SandpitPower/<UpdateCreaturePositions>d__18::MoveNext NCombatRoom.Instance.CreateTween.SetParallel.SetEase.SetTrans  # returns when TestMode.IsOn, or a TestMode.IsOff branch
+MegaCrit.Sts2.Core.Models.Relics.EternalFeather/<AfterRoomEntered>d__4::MoveNext NRestSiteRoom.Instance  # passed to PlayerFullscreenHealVfx.Play, which returns when TestMode.IsOn or the container is null
+MegaCrit.Sts2.Core.Models.Relics.LordsParasol/<PurchaseEverything>d__3::MoveNext NRun.Instance.AwaitProcessFrame  # TestMode.IsOff branch, after NRun.Instance != null
+MegaCrit.Sts2.Core.Runs.RunManager/<FadeIn>d__196::MoveNext NGame.Instance.get_Transition.RoomFadeIn  # TestMode.IsOff branch (TestMode uses TestFadeIn/TestFadeOut)
+MegaCrit.Sts2.Core.Runs.RunManager/<FadeOut>d__197::MoveNext NGame.Instance.get_Transition.RoomFadeOut  # TestMode.IsOff branch (TestMode uses TestFadeIn/TestFadeOut)
+MegaCrit.Sts2.Core.Runs.RunManager/<ReturnToMainMenuWithError>d__229::MoveNext NGame.Instance.ReturnToMainMenuAfterRun  # TestMode.IsOff branch

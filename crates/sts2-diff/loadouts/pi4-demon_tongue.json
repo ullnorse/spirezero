@@ -1,0 +1,1 @@
+{"character": "Ironclad", "deck": ["INFERNO", "INFERNO", "CRIMSON_MANTLE+1", "STRIKE_IRONCLAD", "STRIKE_IRONCLAD", "STRIKE_IRONCLAD", "DEFEND_IRONCLAD", "DEFEND_IRONCLAD", "DEFEND_IRONCLAD", "BASH"], "relics": ["BURNING_BLOOD", "DEMON_TONGUE"], "potions": ["ENERGY_POTION"], "hp": 50, "max_hp": 80, "encounters": ["FuzzyWurmCrawlerWeak", "SlimesWeak", "NibbitsWeak"]}

@@ -1,0 +1,24 @@
+                 ♥ 48/80   ◉ 300   Floor 2             Tab ≡
+                 ──────────────────────────────────────────────
+                 z ◈ Fire   c ◈ Block                ◆ 2 relics
+
+                                  Choose a card
+
+                 Pick one for your deck, or skip.
+
+                 ┌────────────────────────────────────────────┐
+                 │▸1  ϟ1 Twin Strike  Attack                 ›│
+                 │ 2  ϟ1 Inferno      Power                  ›│
+                 │ 3  ϟ1 Rupture      Power                  ›│
+                 │ s  Skip                                    │
+                 └────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+                  ↑↓ move · Enter choose · 1-3 pick · Esc back

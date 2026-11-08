@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shaping on the real env</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="15-shaping">
+<main>
+  <div class="kicker">Week 3 · Day 15</div>
+  <h1>Shaping on the real env</h1>
+  <p class="lead">Day 10's toy showed a berserker and a turtle made by two reward terms on the mini fight. Today the same four rewards train day 10's net on real fights, on the same seeds, and the protocol judges them by the two numbers none of them is: the greedy win rate and the HP left after a win.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>A shaped reward is a different objective. Whether the agent trained on it is better at the real objective is an empirical question with a protocol answer, never a design argument. Potential-based shaping is the one form that provably leaves the optimal policy alone; everything else is a bet, and the bet is settled on the evaluation set.</p>
+  </div>
+
+  <h2>Four rewards over one rollout</h2>
+  <table>
+    <tr><th>kind</th><th>per step</th><th>what it can teach</th></tr>
+    <tr><td>sparse</td><td>+1 won, −1 any other end</td><td>the objective itself</td></tr>
+    <tr><td>hp_loss</td><td>sparse − c · HP fraction lost this step</td><td>losing HP is bad even in a won fight; also that a slow loss is better than a fast one</td></tr>
+    <tr><td>win_hp_bonus</td><td>sparse + c · HP fraction at the win</td><td>among wins, prefer the healthier; silent on losses</td></tr>
+    <tr><td>potential</td><td>sparse + γΦ(s′) − Φ(s), Φ = c · HP fraction, Φ(terminal) = 0</td><td>the same gradient toward keeping HP as hp_loss, with the guarantee</td></tr>
+  </table>
+  <p>The potential term sums over an episode to −Φ(s<sub>0</sub>), a constant per start, which is why it cannot change which policy is optimal; the exercise checks that sum term by term. hp_loss is almost the same thing with the γ dropped and the gains ignored; on a fight with no healing the two differ only by discounting.</p>
+
+  <h2>Measured</h2>
+  <p>Day 10's net, 60 iterations, seed 0, each reward; greedy over 512 fights on seed 7, c = 0.1 unless shown:</p>
+  <table>
+    <tr><th>reward</th><th>greedy win rate</th><th>HP fraction after wins</th><th>mean length</th></tr>
+    <tr><td>sparse</td><td>0.801</td><td>0.60</td><td>22.6</td></tr>
+    <tr><td>hp_loss</td><td>0.803</td><td>0.61</td><td>22.3</td></tr>
+    <tr><td>win_hp_bonus</td><td>0.799</td><td>0.61</td><td>22.1</td></tr>
+    <tr><td>potential</td><td>0.812</td><td>0.60</td><td>22.5</td></tr>
+    <tr><td>hp_loss, c = 1</td><td>0.807</td><td>0.61</td><td>22.6</td></tr>
+    <tr><td>hp_loss, c = 3</td><td>0.781</td><td>0.61</td><td>23.5</td></tr>
+    <tr><td>damage dealt, c = 3 (the proxy from day 10's toy)</td><td>0.805</td><td>0.61</td><td>22.2</td></tr>
+  </table>
+  <p>Nothing moves outside the standard error of 1.8 points until the HP penalty is three times the terminal reward, and then the win rate drops two points and the HP left does not rise. No turtle, no berserker. Three reasons, each a lesson:</p>
+  <ul>
+    <li><b>The sparse signal is not sparse here.</b> A fight is 22 actions and a third of them are won from the start; the ±1 arrives often enough that PPO with GAE needs no help. Shaping earns its keep when the terminal signal is rare, which is the run env's situation, not the fight env's.</li>
+    <li><b>The features bound the policy.</b> Day 8's scalars see HP and incoming damage but not which card blocks. A net that cannot express "Defend now" cannot become a turtle whatever the reward says. The mini fight's learner could, which is why the toy showed one. Reward design and representation are coupled: day 14's net would react to c = 3 more.</li>
+    <li><b>The starts are forgiving.</b> Starter decks on floor-one encounters have little HP to protect and few ways to trade it. The HP-left column barely has room to move.</li>
+  </ul>
+  <p>The right conclusion is the protocol's: on this env and this net, train sparse. Keep the shaped variants as the first thing to re-measure when the terminal signal gets rarer, when the net gets stronger or when the starts get harder.</p>
+
+  <div class="toy">
+    <div class="kicker">Toy · the potential term telescopes</div>
+    <p>HP fraction along a made-up fight. The shaped reward adds γΦ(s′) − Φ(s) each step; its discounted sum is −Φ(s<sub>0</sub>), whatever the path.</p>
+    <div class="row"><label>γ <input type="range" id="g" min="0.9" max="1" step="0.01" value="0.99"> <span class="val" id="gV">0.99</span></label><label>c <input type="range" id="c" min="0.05" max="1" step="0.05" value="0.1"> <span class="val" id="cV">0.10</span></label><button id="path">another path</button></div>
+    <canvas id="chart" height="180"></canvas>
+    <div class="stats"><div class="tile"><div class="k">Σ γᵗ (γΦ′ − Φ)</div><div class="v" id="sum">–</div></div><div class="tile"><div class="k">−Φ(s₀)</div><div class="v" id="phi0">–</div></div></div>
+  </div>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>python/sts2/env.py</code></span>: the +1/−1 lines of <code>Sts2PufferEnv.step</code>; the engine never sees a reward (<span class="path"><code>docs/decisions.md</code></span>), so every shaping lives in the trainer, as the exercise's <code>rollout</code> does by keeping the observation before the step.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/obs.rs</code></span>: HP and max HP at header bytes 0 and 2, the only two numbers the four rewards read.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>With F(s, s′) = γΦ(s′) − Φ(s), the shaped return is G′<sub>t</sub> = G<sub>t</sub> + Σ<sub>k≥0</sub> γ<sup>k</sup> (γΦ(s<sub>t+k+1</sub>) − Φ(s<sub>t+k</sub>)) = G<sub>t</sub> − Φ(s<sub>t</sub>) once Φ(terminal) = 0, so Q′(s, a) = Q(s, a) − Φ(s): the same argmax in every state (Ng, Harada and Russell, 1999). The term −Φ(s<sub>t</sub>) is a per-state constant, which is a baseline, which is why potential shaping and a critic overlap in what they do.</p>
+      <p>hp_loss as written is −c · max(0, HP<sub>t</sub> − HP<sub>t+1</sub>): without the max and with the γ it would be potential-based with Φ = c · HP; the max breaks the telescoping when HP goes up (healing), which Act 1 rarely allows.</p>
+    </div>
+  </details>
+
+  <script>
+    Course.init();
+    const $ = id => document.getElementById(id);
+    let seed = 3;
+    function draw() {
+      const g = +$('g').value, c = +$('c').value; $('gV').textContent = g.toFixed(2); $('cV').textContent = c.toFixed(2);
+      const r = Course.rng(seed); const hp = [1.0]; for (let i = 0; i < 12; i++) hp.push(Math.max(0.1, hp[i] - (r() < 0.5 ? 0 : 0.05 + 0.15 * r())));
+      const phi = hp.map(h => c * h); phi.push(0);
+      const terms = []; let sum = 0;
+      for (let t = 0; t < hp.length; t++) { const f = g * phi[t + 1] - phi[t]; sum += Math.pow(g, t) * f; terms.push(f); }
+      Course.lineChart($('chart'), [{ name: 'HP fraction', data: hp.map((h, i) => [i, h]), dots: true }, { name: 'shaping term × 5', data: terms.map((f, i) => [i, 5 * f]), color: '--c2', dots: true }], { ymin: -1, ymax: 1, xlabel: 'step' });
+      $('sum').textContent = sum.toFixed(4); $('phi0').textContent = (-phi[0]).toFixed(4);
+    }
+    ['g', 'c'].forEach(k => $(k).addEventListener('input', draw)); $('path').addEventListener('click', () => { seed++; draw(); }); draw();
+
+    Course.quiz('#quiz', [
+      { q: 'The HP penalty at c = 3 lowered the win rate without raising the HP left. What happened?', choices: ['The net became a turtle', 'The penalty added noise to the objective without a policy able to act on it; the net cannot pick the blocking card', 'The evaluation seed changed'], answer: 1, why: 'Shaping can only redirect a policy toward behaviours its inputs let it express. Measure representation and reward together.', hint: 'What does day 8\'s featuriser say about the hand?' },
+      { q: 'Which reward is guaranteed not to change the optimal policy?', choices: ['win_hp_bonus', 'potential: γΦ(s′) − Φ(s) with Φ(terminal) = 0', 'hp_loss with a small c'], answer: 1, why: 'The sum telescopes to a per-state constant. The others change what is optimal, by a little or a lot depending on c.', hint: 'Which one did the toy telescope?' },
+      { q: 'When is shaping most likely to pay on this engine?', choices: ['On floor-one fights with starter decks', 'On whole runs, where the ±1 arrives once per few hundred decisions and only on a victory', 'Never'], answer: 1, why: 'Day 17 trains on runs and has to shape by floor: the sparse victory signal is simply absent at this level.', hint: 'How rare is the terminal reward in each env?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

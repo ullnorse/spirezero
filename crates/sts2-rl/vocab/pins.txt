@@ -1,0 +1,9 @@
+cards.txt 560 d4a2dad3011e8eaf
+relics.txt 299 d9d949751db564bb
+monsters.txt 112 2f7108f24d303bf1
+powers.txt 244 fe6c2bd531fd3526
+potions.txt 66 2f43761feccedb53
+encounters.txt 89 e57b82a18b2239b2
+events.txt 60 e9b8583789b1b7d5
+ancients.txt 10 2fe85548ce8b367f
+acts.txt 6 1045f7830dcd2088

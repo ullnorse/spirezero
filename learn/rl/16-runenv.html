@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The run env</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="16-runenv">
+<main>
+  <div class="kicker">Week 4 · Day 16</div>
+  <h1>The run env</h1>
+  <p class="lead">A fight is thirty decisions and a signal at the end. A run is a few hundred decisions of three kinds, map, rewards and shops, with fights in between, and the signal is how far you got. <code>Sts2RunEnvs</code> makes a whole run one episode; <code>combat="greedy"</code> lets the engine's planner play the fights so the agent sees only the run-level choices.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>Same loop, different unit. The observation grows to 2,996 bytes with a phase byte that says which decision is pending; the action space grows to 355 indices, the 140 combat ones followed by the run-level blocks; a step is one agent decision, and decisions with one option are taken inside the env. Everything from weeks 1 to 3 applies unchanged, including the baselines before any training.</p>
+  </div>
+
+  <h2>One episode, many phases</h2>
+  <pre><code>from sts2 import Sts2RunEnvs
+envs = Sts2RunEnvs(64, seed_range=(0, 1000), cycle=True, combat="greedy", character="Necrobinder", threads=4)
+phase = envs.obs[:, 3]            # 2 map, 4 rewards, 7 rest, 9 shop, ... (PHASES in the exercise)
+legal = envs.legal()              # 64 × 355; bits below 140 only during a fight the agent plays
+envs.step(actions); envs.done; envs.won; envs.end; envs.floor</code></pre>
+  <table>
+    <tr><th>phase byte</th><th>decision</th><th>legal block (index from)</th></tr>
+    <tr><td>0, 1</td><td>ancient, event option</td><td>140, 148</td></tr>
+    <tr><td>2</td><td>map: travel to a column of the next row</td><td>156</td></tr>
+    <tr><td>3</td><td>combat (only with <code>combat="agent"</code>)</td><td>0 to 139</td></tr>
+    <tr><td>4</td><td>rewards: claim, pick a card, skip, proceed</td><td>164, 172, 228, 354</td></tr>
+    <tr><td>5, 6</td><td>deck selection (pick, confirm, cancel), bundles</td><td>250, 330, 331, 350</td></tr>
+    <tr><td>7, 8, 9</td><td>rest site, treasure, shop (buy, remove)</td><td>236, 332, 333</td></tr>
+    <tr><td>12, 13</td><td>game over, victory (never pending: the episode has ended)</td><td></td></tr>
+  </table>
+  <p>The header (32 bytes) carries floor, HP, gold, deck size, relic count and the map position; the deck, relics, belt, the map's points and whatever screen is pending follow at fixed offsets. The exercise decodes the header and the action index; day 17 featurises the rest.</p>
+
+  <h2>Baselines by floor</h2>
+  <p>No run-level agent wins at this point: the engine ports Act 1 and a little beyond, and greedy-fought runs die around floor 12. So the number is the <b>final floor</b>, from <code>envs.floor</code> when a run ends, and the protocol is day 13's with floors in place of wins: a fixed seed range, cycled, so two agents play the same runs.</p>
+  <div class="toy">
+    <div class="kicker">Toy · four rules, 400 runs each</div>
+    <canvas id="floors" height="130"></canvas>
+    <p class="muted">Necrobelt, ascension 0, greedy fights, seeds 0 to 1,000. Standard errors about 0.25.</p>
+  </div>
+  <p>Random run-level play reaches floor 12.2. Playing the lowest legal index, which means the first map column, claim everything, take the first card of every reward and rest rather than smith, reaches 14.9. Skipping every card reward reaches 10.7: a starter deck does not carry Act 1. The gap between random and a trivial rule is the room a learned agent has to show it learned something; the gap to the top of Act 1 is the room for everything after that.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>crates/sts2-rl/src/run_obs.rs</code></span>: the observation, section by section, with every offset; <span class="path"><code>crates/sts2-rl/src/run_action.rs</code></span>: the index blocks after 140.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/run_envs.rs</code></span>: automatic single-option decisions, the resolvers, refused actions (an action the engine would reject has no bit), <code>RunEnd</code> (died, victory, unsupported, stuck, capped at 60,000 actions).</li>
+      <li><span class="path"><code>crates/sts2-rl/src/resolve.rs</code></span>: the greedy resolver, a beam search over play sequences each turn, the same policy as <code>cargo xtask sweep --policy greedy</code>.</li>
+      <li><span class="path"><code>python/tests/test_run_smoke.py</code></span>: the smallest driver of the run env, including the phase-byte check the exercise repeats.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <script>
+    Course.init();
+    Course.bars(document.getElementById('floors'), [12.15, 14.88, 13.96, 10.67], ['random', 'lowest index', 'claim, first card, rest', 'skip every card'], { max: 16, labelWidth: 170, fmt: v => v.toFixed(2) });
+    Course.quiz('#quiz', [
+      { q: 'Why does the agent never see a combat index with combat="greedy"?', choices: ['Fights are skipped', 'The env plays every fight to its end with the greedy resolver before returning to the agent', 'The mask is wrong'], answer: 1, why: 'The hybrid mode settles the fights inside step; only run-level decisions come back. combat="agent" returns the fight decisions too.', hint: 'See the resolved count in envs.stats().' },
+      { q: 'Two policies measured by mean floor on seed_range=(0, 1000) with cycle=True see which runs?', choices: ['Different random runs', 'The same seeds in the same order, so the comparison is paired', 'Only seed 0'], answer: 1, why: 'A fixed range cycled is the run env\'s version of day 13\'s fixed seed.', hint: 'What does the seed range fix?' },
+      { q: 'Skipping every card reward loses two floors against random. What does that say about the objective?', choices: ['Rewards screens do not matter', 'The deck decides how far the greedy fighter gets, so run-level choices move the floor by several points: there is something to learn', 'Random play is optimal'], answer: 1, why: 'The spread between the rules is the signal a run-level agent trains on.', hint: 'Compare the four bars.' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

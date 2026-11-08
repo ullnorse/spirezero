@@ -1,0 +1,30 @@
+ ♥ 80/80   ◉ 300   Floor 2          Tab ≡
+ ───────────────────────────────────────────
+ z ◈ Fire   c ◈ Block             ◆ 3 relics
+
+              1 Leaf Slime (S) ›
+                     ⚔ 3
+           ▕██████████████▏ 14/14
+
+              2 Leaf Slime (M) ›
+                 ✚ 2 Slimed
+           ▕██████████████▏ 33/33
+
+              3 Twig Slime (S) ›
+                     ⚔ 4
+            ▕██████████████▏ 7/7
+
+                  Ironclad
+           ▕██████████████▏ 80/80
+         Incoming: after your choice
+               Round 1: drew 5
+ ┌ Toasty Mittens · Choose a card to Exha… ┐
+ │▸1  ϟ1 Strike  Deal 6 damage.           ›│
+ │ 2  ϟ1 Defend  Gain 5 Block             ›│
+ │ 3  ϟ1 Defend  Gain 5 Block             ›│
+ │ 4  ϟ1 Strike  Deal 6 damage            ›│
+ │ 5  ϟ1 Defend  Gain 5 Block             ›│
+ └─────────────────────────────────────────┘
+ ϟ 3/3 Energy   a Draw 6 · s Discard 0
+
+       ↑↓ card · Enter play · 1-9 play

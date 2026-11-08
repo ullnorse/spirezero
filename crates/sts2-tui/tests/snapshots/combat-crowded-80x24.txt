@@ -1,0 +1,24 @@
+                 ♥ 80/80   ◉ 300   Floor 2             Tab ≡
+                 ──────────────────────────────────────────────
+                 z ◈ Fire   c ◈ Block                ◆ 2 relics
+                  1 Leaf Slime (M) ›  ⚔ 6×2  ▕██████▏ 30/33
+                  2 Twig Slime (S) ›  ⚔ 6×2  ▕█████ ▏ 26/33 ▣ 5
+                  3 Fuzzy Wurm Crawler ›  ⚔ 6×2  ▕████  ▏ 22/33
+                  4 Cultist ›  ⚔ 6×2  ▕████  ▏ 18/33
+                                    ✗ Louse
+
+                                    Ironclad
+                             ▕██████████    ▏ 52/80  ▣ 7
+                               ⚔ −29 HP next turn
+                  1  ϟ1 Strike  Deal 6 damage                 ›
+                  2  ϟ1 Defend  Gain 5 Block                  ›
+                  3  ϟ1 Strike  Deal 6 damage                 ›
+                  4  ϟ1 Defend  Gain 5 Block                  ›
+                  5  ϟ1 Strike  Deal 6 damage                 ›
+                  6  ϟ1 Defend  Gain 5 Block                  ›
+                  7  ϟ1 Strike  Deal 6 damage                 ›
+                  8  ϟ1 Defend  Gain 5 Block                  ›
+                  9  ϟ1 Strike  Deal 6 damage                 ›
+                  0  ϟ1 Defend  Gain 5 Block                  ›
+                 ϟ 3/3 Energy   a Draw 14 · s Discard 3
+                                 e   End Turn

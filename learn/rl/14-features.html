@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Features that see the hand</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="14-features">
+<main>
+  <div class="kicker">Week 3 · Day 14</div>
+  <h1>Features that see the hand</h1>
+  <p class="lead">Day 8's featuriser is a multi-hot: a 1 for every card kind in hand. It says a Strike is there, not which slot holds it, and the action space is indexed by slot. Today's net gives each hand slot an embedding of its card and scores that slot's eight play indices from that embedding. A permutation test proves the alignment; a training run measures what it buys.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>Index s × 8 + t means "play hand slot s on target t". A head that produces that logit should see slot s's card and target t's enemy. When the net's structure mirrors the action layout, the same weights score "Strike on the wounded enemy" in whatever slot the Strike landed, and the policy learned on one hand transfers to every permutation of it.</p>
+  </div>
+
+  <h2>From ids to embeddings</h2>
+  <p>A card kind is a category with 560 values. A multi-hot treats it as 560 independent inputs; an <b>embedding</b> is a table of 560 learned vectors, 32 floats each, so kinds the policy treats alike end up with similar vectors and a new card starts from whatever its neighbours taught. The ids come from the cards table (6 bytes per card: kind, upgrade, pile, cost, flags) indexed by the hand's ten ids; the vocab is append-only, so the table survives engine updates.</p>
+  <pre><code>e = embed(kinds)                       # n × 10 × 32, one vector per hand slot
+pooled = masked mean of e over the hand   # what the body sees about the hand
+h = body([scalars, pooled])              # n × 256
+play[s] = head([e[s], upgrade[s], cost[s] / 3, h])   # 8 logits for slot s
+logits = [play[0..9] flattened, other(h)]           # 80 play + 60 other = 140</code></pre>
+  <p>The body's input is the pooled hand, which is permutation-invariant by construction; the per-slot head is shared across slots. Together they make the play logits <b>equivariant</b>: swap two hand slots and the two blocks of eight logits swap, nothing else changes.</p>
+
+  <div class="toy">
+    <div class="kicker">Toy · swap two slots</div>
+    <p>A hand of five, with a logit per slot from a toy slot head (the same small rule for every slot) and from a flat head (one weight per slot). Click two cards to swap them.</p>
+    <div class="hand" id="hand"></div>
+    <div class="row"><label>head <select id="head"><option value="slot">slot-aligned (shared)</option><option value="flat">flat (one weight per slot)</option></select></label><button id="shuffle">shuffle</button></div>
+    <canvas id="bars" height="150"></canvas>
+    <p class="muted" id="note"></p>
+  </div>
+  <p>The flat head's logit for slot 2 stays attached to slot 2 whatever card moves in; it has to learn "slot 2 holds a Strike" separately for every slot and every card. The shared head's logit moves with the card. The exercise's <code>permutation_test</code> is the same check on the real net: swap slots a and b in the features and the legal bits, and require the play logits to swap and the other 60 to stay.</p>
+
+  <h2>What it buys, measured</h2>
+  <p>On the default starts the gain is small. Both nets, 200 PPO iterations each, seed 0, greedy over 512 fights on seed 7:</p>
+  <table>
+    <tr><th>net</th><th>greedy win rate</th><th>entropy at the end</th></tr>
+    <tr><td>day 10, multi-hot hand</td><td>0.812</td><td>0.53</td></tr>
+    <tr><td>slot net, 32-d embeddings</td><td>0.824</td><td>0.65</td></tr>
+    <tr><td>either, with per-enemy HP and block added</td><td>0.818</td><td>0.6</td></tr>
+  </table>
+  <p>One point, inside the standard error of 1.7. The reason is the corpus: the default starts are starter decks on floor-one encounters, so the hand is Strikes, Defends and one or two character cards; a multi-hot already pins down most of what matters, and cards-first plays most of those hands correctly. The slot net earns its keep when decks diverge, which is what week 4's runs produce, and when the hand's order carries information (a 0-cost card in slot 7 behind a 2-cost one in slot 0). Measure, do not assume: a structural improvement that reads as obvious is still worth one point until the data says otherwise.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>crates/sts2-rl/src/action.rs</code></span>: <code>PLAY_BASE + slot × TARGET_SLOTS + target</code>, the arithmetic the slot head mirrors; target 0 is "no target", 1 to 7 the enemies in order.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/obs.rs</code></span>: the cards table (kind, upgrade, pile, cost, flags) the slot features are gathered from, and the hand's ids at offset 888.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/vocab.rs</code></span>: append-only ids, and <code>vocab_hash</code>, which a trained embedding table should be saved with.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>Let P be a permutation of the hand slots. The features transform as x ↦ Px on the slot block and the identity on the scalars. The body sees mean<sub>s</sub> e<sub>s</sub>, which is P-invariant; the slot head f is applied to each (e<sub>s</sub>, h) independently, so play ↦ P·play. That is equivariance: f(Px) = P f(x). A flat head g(x) = Wx has no such property unless W happens to commute with every P, which a learned W does not. Equivariant structure shrinks the hypothesis space to policies that could possibly be right, which is what "inductive bias" means in practice.</p>
+    </div>
+  </details>
+
+  <script>
+    Course.init();
+    const $ = id => document.getElementById(id);
+    const CARDS = [{ n: 'Strike', c: 1, k: 'strike', v: 0.9 }, { n: 'Defend', c: 1, k: 'defend', v: 0.4 }, { n: 'Bash', c: 2, k: 'strike', v: 1.3 }, { n: 'Strike', c: 1, k: 'strike', v: 0.9 }, { n: 'Defend', c: 1, k: 'defend', v: 0.4 }];
+    let hand = CARDS.map((c, i) => Object.assign({ id: i }, c)), sel = null;
+    const FLAT = [1.2, 0.3, 0.8, 0.1, 0.5]; // a flat head's learned preference per slot
+    function draw() {
+      const root = $('hand'); root.innerHTML = '';
+      hand.forEach((c, i) => {
+        const b = Course.el('button', { class: 'card ' + c.k + (sel === i ? ' sel' : ''), onclick: () => { if (sel === null) { sel = i; } else { [hand[sel], hand[i]] = [hand[i], hand[sel]]; sel = null; } draw(); } }, [Course.el('span', {}, [c.n]), Course.el('span', { class: 'cost' }, [`slot ${i} · cost ${c.c}`])]);
+        if (sel === i) b.style.outline = '2px solid var(--accent)';
+        root.appendChild(b);
+      });
+      const flat = $('head').value === 'flat';
+      const vals = hand.map((c, i) => flat ? FLAT[i] : c.v);
+      Course.bars($('bars'), vals, hand.map((c, i) => `slot ${i}: ${c.n}`), { max: 1.5, labelWidth: 130, fmt: v => v.toFixed(2) });
+      $('note').textContent = flat ? 'Flat head: the numbers belong to the slots. Move Bash to slot 3 and it scores 0.10.' : 'Shared head: the numbers belong to the cards. Bash scores 1.30 wherever it sits.';
+    }
+    $('head').addEventListener('change', draw);
+    $('shuffle').addEventListener('click', () => { const r = Course.rng(Date.now() & 0xffff); for (let i = hand.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [hand[i], hand[j]] = [hand[j], hand[i]]; } sel = null; draw(); });
+    draw();
+
+    Course.quiz('#quiz', [
+      { q: 'Swapping hand slots 1 and 4 in the input of a slot-aligned net changes which logits?', choices: ['None', 'Exactly the sixteen play logits of slots 1 and 4, which trade places', 'All 140'], answer: 1, why: 'The pooled hand is invariant, so the body output is unchanged; the shared head is applied per slot, so the two blocks swap.', hint: 'What does the body see?' },
+      { q: 'The slot net gained one point on the default starts. What is the right conclusion?', choices: ['Embeddings do not help in card games', 'On starter decks a multi-hot already carries the information; keep the structure and re-measure where decks vary', 'The permutation test must have failed'], answer: 1, why: 'A structural improvement pays in proportion to how much structure the data has. Starter hands have little.', hint: 'What is in a floor-one hand?' },
+      { q: 'Why pool the hand\'s embeddings by a mean before the body rather than concatenating the ten vectors?', choices: ['It is faster', 'A concatenation depends on the order of the slots, so the body would have to learn each permutation; the mean does not', 'Concatenation does not fit in 256 units'], answer: 1, why: 'The pooling is what makes the body invariant and the whole net equivariant.', hint: 'Which operation is the same for every ordering of its inputs?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

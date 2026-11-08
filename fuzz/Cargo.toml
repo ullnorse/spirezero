@@ -1,0 +1,31 @@
+# The fuzz targets (`cargo fuzz`, docs/reviews/spire-mentor.md idea 4): a workspace of its own, so
+# the main workspace's builds and gate never compile libFuzzer. Run from the repository root:
+# `cargo fuzz run ffi_step` (see fuzz_targets/ffi_step.rs).
+[package]
+name = "sts2-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+sts2-core = { path = "../crates/sts2-core" }
+sts2-rl = { path = "../crates/sts2-rl" }
+sts2-ffi = { path = "../crates/sts2-ffi" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "ffi_step"
+path = "fuzz_targets/ffi_step.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1

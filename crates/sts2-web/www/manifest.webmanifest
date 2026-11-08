@@ -1,0 +1,17 @@
+{
+  "name": "Slay the Spire 2 (SpireZero)",
+  "short_name": "Spire 2",
+  "description": "Slay the Spire 2 on the SpireZero engine, made for a phone.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1015",
+  "theme_color": "#0e1015",
+  "icons": [
+    { "src": "art/app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "art/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "art/app/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

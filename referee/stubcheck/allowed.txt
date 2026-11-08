@@ -1,0 +1,14 @@
+# Game-logic methods that reference a Godot member sts2-cli's stubs lack, each unreachable in a headless referee run.
+# referee/stubcheck fails on any other such method and on an entry here that no longer needs to be listed.
+MegaCrit.Sts2.Core.Runs.Metrics.MetricUtilities::UploadSettingsMetric  # only when NumberOfRuns == 5; the referee pins 999999999
+MegaCrit.Sts2.Core.Rooms.BackgroundAssets::.ctor  # combat background scenes (NCombatRoom, asset preloading)
+MegaCrit.Sts2.Core.Rewards.RelicReward::CreateIcon  # reward button icon (NRewardButton)
+MegaCrit.Sts2.Core.Rewards.Reward::CreateIcon  # reward button icon (NRewardButton)
+MegaCrit.Sts2.Core.Models.ActModel::get_DefeatedAllEnemiesAchievement  # AchievementsHelper's checks are empty in this build
+MegaCrit.Sts2.Core.Models.CharacterModel::get_RunWonAchievement  # AchievementsHelper's checks are empty in this build
+MegaCrit.Sts2.Core.Models.RelicModel::UpdateTexture  # relic icon shader (RelicReward.CreateIcon, relic nodes)
+MegaCrit.Sts2.Core.Models.Monsters.BowlbugEgg::SetupSkins  # spine skin setup by the creature node
+MegaCrit.Sts2.Core.Events.Custom.CrystalSphereEvent.CrystalSphereItem::get_TexturePath  # item texture (CrystalSphereItem.Texture)
+MegaCrit.Sts2.Core.Entities.RestSite.MendRestSiteOption/<OnSelect>d__10::MoveNext  # Mend is offered only with more than one player
+MegaCrit.Sts2.Core.Commands.CardPileCmd/<>c__DisplayClass12_2::<GetTweenForCardsChangingPiles>b__4  # card node tween callback
+MegaCrit.Sts2.Core.Commands.CardPileCmd/<GiveToAnotherPlayer>d__4::MoveNext  # multiplayer only

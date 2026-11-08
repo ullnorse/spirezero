@@ -1,0 +1,31 @@
+[package]
+name = "sts2-tui"
+description = "Terminal UI for playing the Rust Slay the Spire 2 engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sts2-core = { path = "../sts2-core" }
+sts2-view = { path = "../sts2-view" }
+# The honest bot behind the hint key (`w`): the same entry point as the web's "ask the bot".
+sts2-diff = { path = "../sts2-diff" }
+ratatui = "0.30"
+unicode-width = "0.2"
+serde_json = "1"
+miniz_oxide = { version = "0.8", optional = true }
+
+[build-dependencies]
+miniz_oxide = "0.8"
+
+[features]
+# Builds the game text from `cargo xtask art-import` (in `~/.cache/spirezero-data`, or
+# `$SPIREZERO_DATA`) into the binary, so it runs with no install or data files (`cargo xtask
+# package`). Personal use only: such a binary holds the game's text.
+embedded = ["dep:miniz_oxide"]
+

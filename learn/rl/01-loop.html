@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The loop</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="01-loop">
+<main>
+  <div class="kicker">Week 1 · Day 1</div>
+  <h1>The loop: agent, environment, state, action, reward</h1>
+  <p class="lead">Every RL system is one loop. Something looks at a situation, does something, and gets a number back. You have run this loop thousands of times by hand. Let's name its parts.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>The <b>environment</b> is the game: it holds the state, applies your moves, and runs the enemy's turn. The <b>agent</b> is the player: it looks at the state and picks an action. After each action the environment hands back a <b>reward</b>, a single number. The agent's whole job is to collect as much reward as it can over a fight.</p>
+    <p>In this course the reward is the one SpireZero's Python env uses: <b>+1 when you win, −1 when you lose, 0 for every step in between.</b> That's it. Nobody tells the agent that blocking a 12-damage Chomp was smart. It has to work that out from wins and losses alone. That gap is what the rest of the course is about.</p>
+  </div>
+
+  <div class="toy">
+    <div class="kicker">Toy · play the loop by hand</div>
+    <p>You are the agent. Click cards. Watch the log below: each line is one turn of the loop, <code>state → action → reward</code>. Notice how long the rewards stay at zero.</p>
+    <div id="fight"></div>
+    <div class="row"><button class="primary" id="newFight">New fight</button><span class="muted" id="tally"></span></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="box note">
+    <div class="kicker">The mini fight</div>
+    <p>28 HP, 3 energy, a deck of 5 Strikes (6 damage) and 5 Defends (5 block), five cards a turn. The Worm has 48 HP and three intents: <b>Chomp</b> (12), <b>Thrash</b> (8 and 6 block) and <b>Bellow</b> (+4 Strength, 8 block). Chomp and Bellow never repeat back to back. This is StS-flavoured, not StS-exact, and it is deliberately tight: attacking blindly wins about one fight in ten.</p>
+  </div>
+
+  <h2>Now take yourself out of the loop</h2>
+  <p>Replace the human with the dumbest possible agent: one that picks a random legal action every step. Then run it a few thousand times. Two things to notice: how fast the loop runs when no human is in it, and how badly it plays.</p>
+
+  <div class="toy">
+    <div class="kicker">Toy · a random agent plays</div>
+    <div class="row">
+      <label>agent <select id="agent">
+        <option value="random">random over all legal actions</option>
+        <option value="randomCard">random over cards (ends turn only when it must)</option>
+        <option value="berserk">always Strike</option>
+        <option value="heuristic">hand-written rule (block when it hurts)</option>
+      </select></label>
+      <button class="primary" id="run">Run 3,000 fights</button>
+      <button id="watch">Watch one fight</button>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">fights</div><div class="v" id="nF">0</div></div>
+      <div class="tile"><div class="k">win rate</div><div class="v" id="wr">–</div></div>
+      <div class="tile"><div class="k">steps / fight</div><div class="v" id="spf">–</div></div>
+      <div class="tile"><div class="k">steps / second</div><div class="v" id="sps">–</div></div>
+    </div>
+    <canvas id="chart" height="200"></canvas>
+    <div id="watchFight" style="margin-top:12px"></div>
+    <div class="log" id="watchLog" style="display:none"></div>
+  </div>
+
+  <p>The uniformly random agent almost never wins, because a third of the time it ends its turn with energy unspent. The one restricted to cards wins about one fight in six. Same environment, same reward, very different results: <b>what the agent is allowed to do, and how often, shapes everything that follows.</b> Day 2 is about exactly that.</p>
+  <p>Also notice the steps-per-second tile. A random agent in this toy plays hundreds of thousands of steps a second. SpireZero's real fight env does about 800,000 steps a second on one core with the full game. Learning needs millions of steps, so speed is not a luxury. It is the thing that makes the whole project possible.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>crates/sts2-rl/src/envs.rs</code></span>: <code>Envs::step</code> is the environment side of the loop for a whole batch of fights. It applies one action per env, ends finished episodes and resets them.</li>
+      <li><span class="path"><code>python/sts2/env.py</code></span>: <code>Sts2PufferEnv.step</code> computes the reward: <code>+1</code> if <code>won</code>, <code>−1</code> on any other end, else 0. The Rust side never computes rewards; it just exposes <code>done</code>, <code>won</code>, HP and block so the trainer can.</li>
+      <li><span class="path"><code>python/sts2/policy.py</code></span>: <code>RandomLegal</code> is the random agent you just ran, vectorised over the batch. On Act 1 starts it wins about 34% of fights, because many real Act 1 fights are easy.</li>
+      <li><span class="path"><code>docs/perf.md</code></span>: the fight env's 798,521 steps/s figure and how it was measured.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>The loop has a name: a <b>Markov decision process</b>. At step <i>t</i> the agent sees state <i>s<sub>t</sub></i>, picks action <i>a<sub>t</sub></i>, gets reward <i>r<sub>t</sub></i> and the environment moves to <i>s<sub>t+1</sub></i>. A whole fight is an <b>episode</b>, and the total reward over it is the <b>return</b>:</p>
+      <div class="formula">G = r<sub>0</sub> + r<sub>1</sub> + r<sub>2</sub> + … + r<sub>T</sub></div>
+      <p>With our reward, <i>G</i> is just +1 or −1. "Markov" means the current state is enough to decide what to do; you don't need the history. That's true for the mini fight (and for the real game, if the observation is complete, which is a design question day 10 returns to).</p>
+      <p>The agent's rule for choosing actions is its <b>policy</b>, written π(a | s): the probability of taking <i>a</i> in <i>s</i>. The random agent's policy is uniform over the legal actions. The goal of RL is to find the π with the highest expected return.</p>
+    </div>
+  </details>
+
+  
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    // ---- hand play
+    const F = Fight;
+    let rand = Course.rng(Date.now() & 0xffff);
+    let s = F.newFight(rand);
+    let wins = 0, losses = 0, stepNo = 0;
+    const fightEl = document.getElementById('fight'), logEl = document.getElementById('log'), tally = document.getElementById('tally');
+    function stateText(x) { return `hp ${x.playerHp} blk ${x.block} en ${x.energy} | worm ${x.enemyHp} blk ${x.enemyBlock} str ${x.str} ${x.intent} | hand S${x.strikes} D${x.defends}`; }
+    function logLine(html) { const d = document.createElement('div'); d.innerHTML = html; logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight; }
+    function draw() { F.render(fightEl, s, { onAction: act }); tally.textContent = `you: ${wins} won, ${losses} lost`; }
+    function act(a) {
+      const before = stateText(s);
+      const r = F.step(s, a, rand);
+      stepNo++;
+      logLine(`<span class="s">#${stepNo} state</span> ${before}<br>&nbsp;&nbsp;<span class="s">action</span> ${F.ACTIONS[a]} &nbsp;<span class="${r.reward > 0 ? 'r' : r.reward < 0 ? 'n' : ''}">reward ${r.reward > 0 ? '+1' : r.reward < 0 ? '−1' : '0'}</span>&nbsp; <span class="muted">${r.events.join(' · ')}</span>`);
+      if (s.done) { if (s.won) wins++; else losses++; }
+      draw();
+    }
+    document.getElementById('newFight').addEventListener('click', () => { s = F.newFight(rand); stepNo = 0; logEl.innerHTML = ''; draw(); });
+    draw();
+    logLine('<span class="muted">Each line: the state the agent saw, the action it took, the reward it got.</span>');
+
+    // ---- random agent
+    const POL = { random: F.randomPolicy, randomCard: F.randomCardPolicy, berserk: F.berserkPolicy, heuristic: F.heuristicPolicy };
+    let nF = 0, nW = 0, nS = 0, curve = [], loop = null;
+    const chart = document.getElementById('chart');
+    function redraw() {
+      document.getElementById('nF').textContent = Course.fmtInt(nF);
+      document.getElementById('wr').textContent = nF ? Course.pct(nW / nF) : '–';
+      document.getElementById('spf').textContent = nF ? (nS / nF).toFixed(1) : '–';
+      Course.lineChart(chart, [{ name: 'win rate so far', data: curve }], { ymin: 0, ymax: 1, xlabel: 'fights', yfmt: v => (100 * v).toFixed(0) + '%' });
+    }
+    document.getElementById('agent').addEventListener('change', () => { nF = nW = nS = 0; curve = []; redraw(); });
+    document.getElementById('run').addEventListener('click', () => {
+      if (loop && loop.running) loop.stop();
+      const pol = POL[document.getElementById('agent').value];
+      const r2 = Course.rng(nF + 11);
+      const target = nF + 3000, t0 = performance.now(); let steps0 = nS;
+      loop = Course.runLoop(() => {
+        for (let i = 0; i < 50 && nF < target; i++) { const f = F.play(pol, r2); nF++; nS += f.steps; if (f.won) nW++; if (nF % 25 === 0) curve.push([nF, nW / nF]); }
+        const dt = (performance.now() - t0) / 1000;
+        document.getElementById('sps').textContent = Course.fmtInt((nS - steps0) / Math.max(dt, 1e-3));
+        redraw();
+        return nF < target;
+      }, 10);
+    });
+    document.getElementById('watch').addEventListener('click', () => {
+      const pol = POL[document.getElementById('agent').value];
+      const wf = document.getElementById('watchFight'), wl = document.getElementById('watchLog');
+      wl.style.display = 'block'; wl.innerHTML = '';
+      const r3 = Course.rng(Date.now() & 0xffff);
+      const st = F.newFight(r3);
+      F.render(wf, st);
+      let k = 0;
+      const timer = setInterval(() => {
+        if (st.done || k > 300) { clearInterval(timer); return; }
+        const a = pol(st, F.legal(st), r3);
+        const r = F.step(st, a, r3); k++;
+        const d = document.createElement('div'); d.textContent = `${F.ACTIONS[a]} → ${r.events.join(' · ')}  (reward ${r.reward})`; wl.appendChild(d); wl.scrollTop = wl.scrollHeight;
+        F.render(wf, st);
+      }, 350);
+    });
+    redraw();
+
+    Course.quiz('#quiz', [
+      { q: 'In the mini fight, when does the agent receive a non-zero reward?', choices: ['After every Strike that deals damage', 'Only when the fight ends', 'At the end of every turn'], answer: 1, why: 'Only the terminal step pays: +1 or −1. Every other step is 0, which is why learning from it is hard.', hint: 'Look at the log: how many rewards were non-zero?' },
+      { q: 'Which of these is part of the environment, not the agent?', choices: ['The rule "block if the hit would hurt"', 'The Worm\'s intent roll and the card draw', 'The choice to play Strike first'], answer: 1, why: 'Randomness in the game (intents, draws) belongs to the environment. The agent only chooses among legal actions.', hint: 'Which one does the player have no say in?' },
+      { q: 'Why does the uniformly random agent lose so much more often than "random over cards"?', choices: ['It gets worse card draws', 'Ending the turn with energy left is legal, and it does that a third of the time', 'Random agents can never win'], answer: 1, why: 'Same game, same reward. The only difference is how often a legal but terrible action gets picked. Action spaces matter.', hint: 'What does "legal" promise about an action? Only that the game accepts it.' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

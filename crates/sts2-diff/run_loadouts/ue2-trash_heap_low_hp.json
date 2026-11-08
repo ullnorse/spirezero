@@ -1,0 +1,1 @@
+{"hp": 7, "max_hp": 70, "policy": "random", "prefer": ["DIVE_IN"], "acts": ["underdocks"]}

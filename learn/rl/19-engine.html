@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The engine side</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="19-engine">
+<main>
+  <div class="kicker">Week 4 · Day 19</div>
+  <h1>The engine side</h1>
+  <p class="lead">Everything the trainer assumes about the env is a promise made in three Rust files. Today reads those promises, checks them from Python over thousands of steps, sees what an illegal action does, and measures how the batch and the thread count set the steps per second the trainer can count on.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>The mask is not a hint; it is derived from the engine's own legal-action list, so an index with a bit set is accepted and one without is refused before anything is applied. The observation is a fixed-layout view of the state with saturating fields. The stats after each step reconcile with the done and won flags. A trainer may assume exactly these things, and an audit that checks them after every step is cheap enough to leave on.</p>
+  </div>
+
+  <h2>What the mask promises</h2>
+  <ul>
+    <li><b>Derived, never computed beside.</b> <code>Combat::legal_actions_into</code> lists the legal actions; <code>action.rs</code> sets one bit per listed action and records its list position, so decoding an index reads the engine's own action back. A listed action with no index (an eighth enemy, an eleventh option) gets no bit and is counted in <code>StepStats.unmapped</code>.</li>
+    <li><b>Never empty.</b> A finished fight is reset before you see its mask, so every live env has at least one legal action. Only a batch that ran out of starts (a sequential corpus) has empty masks, and the default source never does.</li>
+    <li><b>Slot-consistent.</b> A legal play index names a hand slot below the hand size; a legal potion index a belt slot below six; End turn and Done are never legal together.</li>
+    <li><b>Enforced.</b> An action without a bit raises <code>Sts2Error</code> (code −3) from <code>step</code>, and nothing is applied to any env of the batch. The exercise checks the observation is byte-for-byte unchanged.</li>
+  </ul>
+
+  <h2>What the buffers promise</h2>
+  <p><code>obs</code>, <code>static_obs</code>, <code>masks</code>, <code>done</code> and <code>won</code> are views on engine memory, rewritten in place by every step. Copy what you keep (the rollout does, by turning each step's observation into a tensor). The header's fields saturate rather than wrap: HP between 0 and max HP, block and energy non-negative, at most ten cards in hand, a status byte in 0..4. <code>invariants.rs</code> checks the same things plus pile conservation after every fuzzed step; the exercise's <code>check_header</code> is the Python half of it.</p>
+  <p>After a step, <code>stats()</code> says what happened: actions applied, episodes ended and won, capped at 10,000 actions, reset. Ended equals the number of done flags, won equals the won flags, reset equals ended as long as starts remain. A trainer's episode and win counters should reconcile with these every iteration; a drift is a bug on one side or the other.</p>
+
+  <h2>Threads and batch</h2>
+  <p>One call to <code>step</code> steps every env; <code>threads=k</code> splits the batch across k engine threads inside that call. The episodes are handed out in env order after the batch has stepped, so trajectories do not depend on k and the evaluation protocol holds for any thread count.</p>
+  <div class="toy">
+    <div class="kicker">Toy · steps per second, measured by the exercise</div>
+    <canvas id="bench" height="130"></canvas>
+    <p class="muted" id="benchNote"></p>
+  </div>
+  <p>Random play on 256 envs: every added thread costs throughput. A random policy's step is about 3 µs of engine work per env; the fork and join per call costs more than that, and the Python side (unpacking masks, drawing actions) is single-threaded whatever k is. At 1,024 envs the threads break even, and the single-threaded figure drops as the batch stops fitting in cache. Threads pay when the step is heavier than the sync: the run env with the greedy resolver (hundreds of µs per decision), a corpus of long fights, or a batch big enough per call. Measure on your own machine with the exercise's <code>bench</code>, then size the batch so the net, not the env, is the bottleneck, as day 10's calculator showed.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>crates/sts2-rl/src/envs.rs</code></span>: <code>Envs::step_with</code> (the illegal check before anything is applied, the per-env reset and the stats), <code>MAX_EPISODE_ACTIONS</code>, <code>each_env</code> for the thread split.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/action.rs</code></span>: the index arithmetic and <code>IndexMask::fill</code>, where the list becomes bits; <span class="path"><code>crates/sts2-rl/src/invariants.rs</code></span>: what the fuzzer checks after every step.</li>
+      <li><span class="path"><code>crates/sts2-ffi/include/sts2.h</code></span>: the C ABI (error codes, <code>sts2_envs_stats</code>, the layout struct) that <span class="path"><code>python/sts2/ffi.py</code></span> wraps.</li>
+      <li><span class="path"><code>docs/perf.md</code></span>: the measured steps per second for every build and workload, with the method.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <script>
+    Course.init();
+    const BENCH = { 256: { 1: 306207, 2: 161273, 4: 106660, 8: 63119 }, 1024: { 1: 261732, 2: 232824, 4: 268060, 8: 227755 } };
+    const vals = [], labels = [];
+    for (const n of [256, 1024]) for (const k of [1, 2, 4, 8]) { vals.push(BENCH[n][k]); labels.push(`${n} envs, ${k} thread${k > 1 ? 's' : ''}`); }
+    Course.bars(document.getElementById('bench'), vals, labels, { max: 330000, labelWidth: 150, fmt: v => Course.fmtInt(v) + ' steps/s', colors: vals.map((_, i) => i < 4 ? '--c1' : '--c2') });
+    document.getElementById('benchNote').textContent = 'From the exercise\'s bench on an idle machine: random legal play, 500 steps (200 at 1,024 envs), one run per setting. Expect a third of variation between runs.';
+    Course.quiz('#quiz', [
+      { q: 'An action with no bit in the mask is applied to a batch of 64 envs. What happens?', choices: ['That env takes a random legal action instead', 'step raises and no env of the batch moves', 'The episode ends as a loss'], answer: 1, why: 'The check runs before anything is applied, so the batch is exactly as it was. A trainer that sees this has sampled from a stale mask.', hint: 'See illegal_is_rejected in the exercise.' },
+      { q: 'Why can the mask never disagree with the engine about what is legal?', choices: ['It is checked by a test', 'It is derived from the engine\'s own legal-action list, one bit per listed action', 'The engine accepts any index'], answer: 1, why: 'There is one source of truth; the mask is a rendering of it, and decoding reads the list position back.', hint: 'What does IndexMask::fill take as input?' },
+      { q: 'Threads=8 was slower than threads=1 on 256 envs of random play and even at 1,024. Why?', choices: ['The engine is single-threaded', 'The per-call fork and join costs more than 3 µs of engine work per env; threads pay only for heavier steps', 'Python holds the GIL'], answer: 1, why: 'Threading has a fixed cost per step call. Amortise it with heavier steps or more envs, and measure.', hint: 'How much work is one random-policy step?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

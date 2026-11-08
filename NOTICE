@@ -1,0 +1,39 @@
+SpireZero includes code adapted from third-party projects.
+
+spire-mentor (sts2-rs), https://github.com/tfriedel/spire-mentor, by Thomas Friedel (MIT)
+  crates/sts2-core/src/run/map/segments.rs is adapted from spire-mentor's
+  `SegmentIndex` (sts2-rs/crates/sts2-core/src/map_path_pruning.rs): the incremental
+  duplicate-segment search of map pruning (candidates found once per pruning loop and
+  re-checked after each prune; the path ranks and aliveness bitset were replaced in PF7).
+
+spire-mentor's licence:
+
+MIT License
+
+Copyright (c) 2025-2026 Thomas Friedel
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+sts2-cli, https://github.com/morefreeze/sts2-cli, by Hao Wu (MIT)
+  The referee (referee/) patches and builds on sts2-cli, a headless runner of the game.
+  It is cloned by referee/setup.sh and is not part of this repository.
+
+Godot Engine, https://godotengine.org (MIT)
+  referee/stubs/Mathf.cs re-implements the API of Godot's `Mathf` (GodotSharp) so the
+  game's code runs headless; the signatures follow Godot's.

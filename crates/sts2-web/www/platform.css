@@ -1,0 +1,17 @@
+/* Phone-app behaviour (WEB31). Sized in --u (1px on the 390-wide page the layout was drawn on). */
+.sheethead { touch-action: none; }
+.sheetbody { overscroll-behavior: contain; }
+#updated {
+  position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 10 * var(--u, 1px)); z-index: 40; transform: translateX(-50%);
+  padding: calc(10 * var(--u, 1px)) calc(16 * var(--u, 1px)); border-radius: 999px; border: 1px solid var(--line);
+  background: var(--bg2); color: inherit; font-weight: 600; box-shadow: var(--shadow); animation: fade .2s ease;
+}
+body.still #updated { animation: none; }
+
+/* Press feedback for every tap target, with or without vibration (iPhone Safari has none): a
+   dimming that moves nothing. The specific :active rules above (scale, background) win; this is the floor. */
+:where(button, [data-tap], .card, .node, summary, a):active { filter: brightness(1.18); }
+:where(button:disabled):active { filter: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :where(button, [data-tap], summary) { transition: filter .08s ease-out; }
+}

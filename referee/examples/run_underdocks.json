@@ -1,0 +1,8 @@
+{"mode": "run", "act1": "UNDERDOCKS", "character": "Necrobinder", "ascension": 0,
+ "actions": [
+  {"action": "choose_option", "args": {"option_index": 0}},
+  {"action": "select_cards", "args": {"indices": "0"}},
+  {"action": "select_map_node", "args": {"col": 0, "row": 1}},
+  {"action": "end_turn"},
+  {"action": "end_turn"}
+ ]}

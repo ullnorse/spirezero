@@ -1,0 +1,56 @@
+/* The map screen's width and route planner (map.js). */
+.planner { padding: 0 6px; }
+.routebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 36px; margin: 0 0 4px; font-size: var(--fs-s); color: var(--dim); }
+.routelabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.routego { flex: none; height: 36px; padding: 0 18px; border-radius: var(--pill); background: var(--gold); color: #1b1405; border: 0; font: 800 14px/1 system-ui, sans-serif; letter-spacing: .5px; }
+.routego:active { transform: scale(.96); }
+.planner .legend { padding: 0; }
+.legend.via .lg { border-color: color-mix(in srgb, var(--sel) 70%, var(--line)); }
+.lg b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* The chosen room's paths lit, the rest of the map dimmed. */
+.mapsvg.routing line:not(.inroute) { opacity: .12 !important; }
+.mapsvg.routing line.inroute { stroke-width: 5; opacity: 1; stroke-dasharray: 0.1 8; }
+.mapsvg.inked.routing line.inroute { stroke: #1f6f78; }
+.mapsvg.routing .node.art:not(.inroute):not(.boss), .mapsvg.routing .node:not(.art):not(.inroute):not(.boss) { opacity: .2 !important; }
+.mapsvg.routing .node.inroute { opacity: 1 !important; }
+.mapsvg.routing .node.art.inroute .glow { opacity: .8; filter: url(#tint-go); }
+.mapsvg.routing .node.art.picked .glow { opacity: 1; filter: url(#tint-lit); }
+.mapsvg.routing .node.picked circle:not(.hit) { stroke: var(--gold); stroke-width: 3.5; }
+
+/* Phones: the page runs past the screen's edges (its own margin is torn paper), so the map
+   uses nearly the whole width; the nodes keep inside the paper. Sized in style.css's --u. */
+@media (max-width: 599px) {
+  .map { margin: 0 -12px; }
+  .mapscroll { overflow-x: hidden; border-radius: 0; touch-action: pan-y; }
+  /* The page runs past .mapclip, which fits: its scroller has nothing to pan sideways, on the screen and in the sheet. */
+  .mapclip { overflow: hidden; overflow: clip; touch-action: pan-y; }
+  #sheet .panel:has(.map.insheet) { overflow-x: hidden; touch-action: pan-y; }
+  .mappage { width: 116%; margin-left: -8%; }
+  /* The room counts sit under the map, by the thumb, on the screen and in the sheet: tapping one lights rooms in view. */
+  .map { display: flex; flex-direction: column; }
+  .planner { order: 2; padding: 6px 12px 0; }
+  /* .sheetbody pads its bottom (18px + the safe area) and a sticky bar stops at that padding, so the map showed in the gap: the bar reaches the sheet's edge and keeps its own padding instead. */
+  .map.insheet .planner { position: sticky; bottom: calc(-18px - env(safe-area-inset-bottom)); z-index: 2; padding-bottom: calc(6px + 18px + env(safe-area-inset-bottom)); background: var(--bg2); }
+  .planner .legend { display: grid; grid-template-columns: repeat(6, 1fr); gap: calc(4 * var(--u)); }
+  .planner .lg { flex-direction: column; gap: 0; height: calc(52 * var(--u)); padding: calc(2 * var(--u)) 0; justify-content: center; font-size: max(10px, 14 * var(--u)); border-radius: 14px; }
+  .planner .lg .lgart { width: calc(30 * var(--u)); height: calc(30 * var(--u)); margin: calc(-3 * var(--u)) 0 calc(-2 * var(--u)); }
+  .planner .lg .ic { width: calc(22 * var(--u)); height: calc(22 * var(--u)); }
+}
+@media (min-width: 900px) and (orientation: landscape) {
+  #screen > .map { max-width: 760px; }
+  .planner .legend { justify-content: center; }
+  .planner .routebar { justify-content: center; }
+  /* The legend's chips already show these counts (and switch to the hovered room's paths): one place. */
+  .planner .routelabel { display: none; }
+}
+/* The bar keeps its height: a long list of counts takes two lines on touch, then is cut. */
+@media (hover: none) { .routelabel { white-space: normal; line-height: 1.15; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; } }
+.mapsvg.routing .node.art.visited .glow { opacity: 0; }
+
+/* WEB60: the map's heading is said by the top bar and the map; it keeps its line so nothing shifts. */
+.head h1.quiet { visibility: hidden; }
+/* The boss as the next room looks as tappable as any next room: teal glow and a bob, like .reach. */
+.node.boss.go rect { stroke: var(--sel); animation: node 1.3s ease-in-out 4; }
+.node.boss.art.go .mi { filter: url(#tint-ink) drop-shadow(0 0 7px #59d9e6) drop-shadow(0 0 3px #59d9e6); animation: nodebob 1.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@media (prefers-reduced-motion: reduce) { .node.boss.art.go .mi, .node.boss.go rect { animation: none; } }

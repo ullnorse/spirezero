@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bootstrapping</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="11-td">
+<main>
+  <div class="kicker">Week 2 · Day 7</div>
+  <h1>Bootstrapping: TD against Monte Carlo</h1>
+  <p class="lead">Day 5 estimated a value by playing fights to the end and averaging. Day 6's Q-learning never waited for the end: it updated toward its own guess about the next state. Both estimate the same number. They fail in opposite ways.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p><b>Monte Carlo</b> waits for the outcome and moves V(s) toward it. Every target is a real ±1, so the estimate is <b>unbiased</b>, but each target is one coin flip, so it is <b>noisy</b>: the variance of a whole fight's randomness lands on every step.</p>
+    <p><b>Temporal difference</b> moves V(s) toward r + γ V(s′), the reward plus the current estimate of the next state. The target uses a guess, so early on it is <b>biased</b> toward whatever the table started at (zero). In exchange it has low variance (one step of randomness, not thirty) and it learns during the fight, not after it. The truth enters at terminal steps, where the target is a real reward, and spreads backwards one step per visit. In a fight 30 steps long that takes many visits to reach the first turn.</p>
+    <p><b>n-step</b> targets sit between: sum n real rewards, then bootstrap. GAE, which PPO uses on day 10, is a weighted mix of every n at once; λ sets the weights, λ = 0 being TD(0) and λ = 1 Monte Carlo.</p>
+  </div>
+
+  <div class="toy">
+    <div class="kicker">Toy · the same value, two estimators</div>
+    <p>V(start) of the mini fight under the hand-written rule. Its true value is about +0.6 (an 80% win rate). Both estimators share the coarse state key from day 6.</p>
+    <div class="row">
+      <label>α (TD step) <input type="range" id="alpha" min="0.01" max="0.5" step="0.01" value="0.1"> <span class="val" id="alphaV">0.10</span></label>
+      <label>n-step <select id="nstep"><option value="1">1 (TD(0))</option><option value="3">3</option><option value="8">8</option><option value="1000">∞ (Monte Carlo target, same α)</option></select></label>
+      <button class="primary" id="run">Run 5,000 episodes</button>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">Monte Carlo mean</div><div class="v" id="mc">–</div></div>
+      <div class="tile"><div class="k">TD estimate</div><div class="v" id="td">–</div></div>
+      <div class="tile"><div class="k">keys in the table</div><div class="v" id="keys">–</div></div>
+    </div>
+    <canvas id="chart" height="220"></canvas>
+  </div>
+  <p>Monte Carlo is right within a few hundred episodes and then wobbles. TD(0) starts at zero and climbs slowly: the +1 at the end has to travel through every key between the last turn and the first. A larger α moves faster and wobbles more. Longer n-step targets carry the reward further per update.</p>
+
+  <h2>A table on the real game</h2>
+  <p>Day 6's key had seven fields and a few thousand rows. A real fight's observation has 972 bytes. The exercise keeps a table anyway, by throwing almost everything away: HP as a quarter of max, energy, whether the incoming damage gets through the block, and how many attacks and skills are legal. Five fields, a few hundred rows.</p>
+  <p>The action index is the second problem. Index 17 means "play hand slot 2 on enemy 1", and hand slot 2 holds a different card every turn, so Q(key, 17) averages over unrelated cards. The exercise groups the 140 indices into four <b>action classes</b>, attack, skill, potion, other, learns Q over classes, and plays the lowest legal index of the chosen class. The table learns <i>when to attack and when to end the turn</i>, nothing about which card. It beats the random agent clearly and the cards-first rule slightly, and it is the last table in the course. Day 8 replaces it with a net that sees the hand.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>crates/sts2-rl/src/action.rs</code></span>: the index arithmetic the action classes are built on: plays are slot × 8 + target, 0 to 79; potions 80 to 127; End turn 128; picks 129 to 138.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/obs.rs</code></span>: the intent slots (5 bytes each at offset 908) the key's danger field reads: kind + 1, damage per hit, hits.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <div class="formula">TD(0):&nbsp; V(s) ← V(s) + α · ( r + γ V(s′) − V(s) )</div>
+      <div class="formula">n-step:&nbsp; G<sub>t:t+n</sub> = r<sub>t</sub> + γ r<sub>t+1</sub> + … + γ<sup>n−1</sup> r<sub>t+n−1</sub> + γ<sup>n</sup> V(s<sub>t+n</sub>)</div>
+      <p>The bracket in the first line is the <b>TD error</b> δ<sub>t</sub>. GAE's advantage is Σ<sub>k</sub> (γλ)<sup>k</sup> δ<sub>t+k</sub>; with λ = 1 the V terms telescope and only the rewards remain (Monte Carlo); with λ = 0 only δ<sub>t</sub> is left (TD(0)). At a terminal step the chain stops: V(s′) is 0 and nothing is carried past it. That cut is the <code>nonterminal</code> factor in day 10's code.</p>
+      <p>Q-learning is TD on Q with a max in the target; SARSA is TD on Q with the action actually taken next. Q-learning learns the greedy policy's values while behaving ε-greedily (<b>off-policy</b>); SARSA learns the values of the policy it is running (<b>on-policy</b>). Policy gradient methods are on-policy, which is why PPO throws its rollouts away after a few epochs.</p>
+    </div>
+  </details>
+
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    const F = Fight;
+    const alphaEl = document.getElementById('alpha'), alphaV = document.getElementById('alphaV'), nEl = document.getElementById('nstep');
+    alphaEl.addEventListener('input', () => alphaV.textContent = parseFloat(alphaEl.value).toFixed(2));
+    const chart = document.getElementById('chart');
+    let loop = null;
+    document.getElementById('run').addEventListener('click', () => {
+      if (loop && loop.running) loop.stop();
+      const alpha = parseFloat(alphaEl.value), n = parseInt(nEl.value, 10), gamma = 1.0;
+      const rand = Course.rng(3);
+      const V = new Map(), mcSum = new Map(), mcCount = new Map();
+      const startKeys = [];
+      for (let i = 0; i < 400; i++) startKeys.push(F.coarseKey(F.newFight(Course.rng(100 + i))));
+      const startOf = (M, def) => startKeys.reduce((a, k) => a + (M.has(k) ? M.get(k) : def), 0) / startKeys.length;
+      const mcCurve = [], tdCurve = [];
+      let ep = 0;
+      const get = k => V.has(k) ? V.get(k) : 0;
+      loop = Course.runLoop(() => {
+        for (let i = 0; i < 20 && ep < 5000; i++) {
+          const s = F.newFight(rand);
+          const keys = [], rews = [];
+          while (!s.done && s.steps < 400) {
+            keys.push(F.coarseKey(s));
+            rews.push(F.step(s, F.heuristicPolicy(s, F.legal(s), rand), rand).reward);
+          }
+          const T = rews.length;
+          // n-step TD: sum n rewards, then bootstrap on the key n steps on (0 past the end).
+          for (let t = 0; t < T; t++) {
+            let g = 0, disc = 1, k;
+            for (k = 0; k < n && t + k < T; k++) { g += disc * rews[t + k]; disc *= gamma; }
+            if (t + k < T) g += disc * get(keys[t + k]);
+            V.set(keys[t], get(keys[t]) + alpha * (g - get(keys[t])));
+          }
+          // Monte Carlo: every visit, running mean of the outcome.
+          const G = s.won ? 1 : -1;
+          for (const k of keys) { mcSum.set(k, (mcSum.get(k) || 0) + G); mcCount.set(k, (mcCount.get(k) || 0) + 1); }
+          ep++;
+          if (ep % 50 === 0) {
+            const mcV = new Map(); mcSum.forEach((v, k) => mcV.set(k, v / mcCount.get(k)));
+            mcCurve.push([ep, startOf(mcV, 0)]); tdCurve.push([ep, startOf(V, 0)]);
+          }
+        }
+        if (mcCurve.length) {
+          document.getElementById('mc').textContent = mcCurve[mcCurve.length - 1][1].toFixed(3);
+          document.getElementById('td').textContent = tdCurve[tdCurve.length - 1][1].toFixed(3);
+          document.getElementById('keys').textContent = Course.fmtInt(V.size);
+          Course.lineChart(chart, [{ name: 'Monte Carlo', data: mcCurve }, { name: n >= 1000 ? 'MC target, step α' : `${n}-step TD, step α`, data: tdCurve, color: '--c2' }],
+            { ymin: -0.2, ymax: 1, xlabel: 'episodes', yfmt: v => v.toFixed(2), hlines: [{ y: 0.6, label: 'true V(start) ≈ 0.6', color: '--fg3' }] });
+        }
+        return ep < 5000;
+      }, 12);
+    });
+
+    Course.quiz('#quiz', [
+      { q: 'Why does TD(0) start near zero and climb slowly here?', choices: ['The learning rate is too small for any method', 'Its targets are the table\'s own guesses, which start at zero; the real reward enters only at the last step and spreads back one key per visit', 'Monte Carlo uses more episodes'], answer: 1, why: 'Bootstrapping is biased toward the initial values until the terminal reward has propagated all the way back.', hint: 'What is the target of the first update of a fresh fight\'s first key?' },
+      { q: 'Monte Carlo is unbiased. Why would anyone use TD instead?', choices: ['TD is always more accurate', 'TD\'s target carries one step of randomness instead of a whole fight\'s, so it has far lower variance, and it can learn before the episode ends', 'TD needs no table'], answer: 1, why: 'Lower variance and online updates. With a good starting guess (a trained critic) the bias is small and the variance win is large. That is what GAE\'s λ trades off.', hint: 'Count the random events between a step and its target under each method.' },
+      { q: 'The real-env table learns Q over four action classes instead of 140 indices. What does it give up?', choices: ['Legality: it may pick illegal actions', 'Which card to play: index 17 is a different card every turn, so the class "attack" is all the table can judge', 'Nothing, the classes are equivalent'], answer: 1, why: 'The key never sees the hand, and the class hides the card. The table learns when to attack and when to stop; a net that reads the hand (day 8) is needed for which card.', hint: 'What does index 17 mean on two different turns?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

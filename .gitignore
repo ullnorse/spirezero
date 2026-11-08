@@ -1,0 +1,37 @@
+/target
+/ref
+/referee/game
+*.log
+/tools/golden/bin
+/tools/golden/obj
+/referee/vendor
+/referee/builds
+__pycache__/
+# Game art extracted by `cargo xtask art-import` is for personal use only: never commit it
+# (it lives in ~/.cache/spirezero-data; guarded by crates/sts2-tui/tests/art.rs).
+*.pck
+*.ctex
+*.skel
+*.spskel
+*.spatlas
+*.bundle
+*.webp
+*.jpg
+*.jpeg
+*.png
+/art/
+/.venv
+
+# Made locally from your own copy of the game; never committed.
+/ref/
+/referee/vendor/
+/crates/sts2-web/www/art
+/crates/sts2-web/www/text
+/crates/sts2-web/www/audio
+*.ogg
+*.mp3
+*.wav
+*.m4a
+*.dll
+*.atlas
+localization_eng/

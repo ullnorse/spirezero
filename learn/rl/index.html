@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learning RL with SpireZero</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body>
+<main>
+  <div class="topnav"><div class="kicker">SpireZero · learn/rl</div><div class="right" id="themeSlot"></div></div>
+  <h1>Learning reinforcement learning, through the fight you already know</h1>
+  <p class="lead">Four weeks, one day at a time, 30 to 60 minutes each: a page with an idea and a toy to click, then a Python exercise with tests. The toys run on a mini fight in JavaScript; the exercises run on SpireZero's real Act 1 fights from day 1 and train PPO on them by day 10. Week 3 turns that trainer into experiments: evaluation, features, reward design. Week 4 moves to whole runs and ends with a capstone that trains and measures an agent in minutes.</p>
+
+  <div class="box note">
+    <div class="kicker">Setup, once</div>
+    <pre><code>learn/rl/setup.sh                                  # .venv with numpy, pytest, CUDA torch; builds target/ffi/libsts2_ffi.so
+.venv/bin/python -m pytest learn/rl/exercises/week1/test_day1.py</code></pre>
+    <p>Each exercise file has <code>TODO</code>s and a docstring per function that the tests check; <code>learn/rl/exercises/solutions/</code> has the reference answers, and <code>RL_SOLUTIONS=1</code> runs the tests against them. Rebuild the library (<code>cargo build --profile ffi -p sts2-ffi</code>) after any change to the engine. Progress on this page is saved in this browser. <button id="reset" style="font-size:0.8rem;padding:3px 8px">reset progress</button></p>
+  </div>
+
+  <div id="syllabus"></div>
+
+  <h2>The repo alongside</h2>
+  <ul>
+    <li><span class="path"><code>python/sts2/env.py</code></span>: <code>Sts2Envs</code> (the batch the exercises use), <code>Sts2PufferEnv</code> (the same with PufferLib's interface and the +1/−1 reward), <code>Sts2RunEnvs</code> (whole runs, week 4).</li>
+    <li><span class="path"><code>crates/sts2-rl/src/obs.rs</code></span> and <span class="path"><code>crates/sts2-rl/src/action.rs</code></span>: the 972-byte observation and the 140-index action space the exercises decode by hand on day 2.</li>
+    <li><span class="path"><code>crates/sts2-rl/vocab/</code></span>: the id → name lists (cards, encounters, monsters, powers) behind every embedding table.</li>
+  </ul>
+
+  <script>
+    const prog = Course.load();
+    const root = document.getElementById('syllabus');
+    Course.SYLLABUS.forEach(w => {
+      root.appendChild(Course.el('div', { class: 'week' }, [Course.el('div', { class: 'kicker' }, [`Week ${w.week}`]), Course.el('h2', {}, [w.title])]));
+      const list = Course.el('div', { class: 'lessons' });
+      w.days.forEach(d0 => {
+        const d = Course.DAYS.find(x => x.id === d0.id);
+        const p = prog[d.id] || {};
+        const st = !d.file ? ['outline', 'st'] : p.passed ? ['done', 'st p'] : p.visited ? ['started', 'st v'] : ['', 'st'];
+        const tag = d.file ? 'a' : 'div';
+        list.appendChild(Course.el(tag, Object.assign({ class: 'lesson' + (d.file ? '' : ' outline') }, d.file ? { href: d.file } : {}), [
+          Course.el('div', { class: 'num' }, [String(d.day)]),
+          Course.el('div', {}, [Course.el('div', { class: 't' }, [d.title]), Course.el('div', { class: 'd' }, [d.blurb + (d.exercise ? ` Exercise: ${d.exercise}.` : '')])]),
+          Course.el('div', { class: st[1] }, [st[0]]),
+        ]));
+      });
+      root.appendChild(list);
+    });
+    document.getElementById('themeSlot').appendChild(Course.theme.button());
+    document.getElementById('reset').addEventListener('click', () => { Course.reset(); location.reload(); });
+    document.querySelectorAll('.path').forEach(p => {
+      const code = p.querySelector('code');
+      const b = Course.el('button', { title: 'copy path', onclick: () => { if (navigator.clipboard) navigator.clipboard.writeText(code.textContent).then(() => { b.textContent = 'copied'; setTimeout(() => b.textContent = 'copy', 900); }); } }, ['copy']);
+      p.appendChild(b);
+    });
+  </script>
+</main>
+</body>
+</html>

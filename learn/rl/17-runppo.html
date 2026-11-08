@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PPO over a run</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="17-runppo">
+<main>
+  <div class="kicker">Week 4 · Day 17</div>
+  <h1>PPO over a run</h1>
+  <p class="lead">Day 10's loop, unchanged, over day 16's env: a net that sees the run and scores all 355 indices, a reward that has to be the floor because the victory never comes, and a training run that is measured by day 16's protocol. It climbs from random to the rule in a minute, and the page says what that does and does not prove.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>Nothing in PPO cares whether a step is a card or a map node. What changes is the episode: long, with a reward that at this level is −1 for every run, so the advantage is noise and nothing learns. Reward the floors climbed instead and the objective becomes "get further", which is the honest objective until a victory exists to reward. GAE's γ moves toward 1 because the consequences of a card choice arrive many decisions later.</p>
+  </div>
+
+  <h2>Run features</h2>
+  <p>Ten scalars from the header (HP fraction, gold, floor, deck size, relic count, belt, map row, removals), a one-hot of the phase, then three multi-hots: the deck's card kinds, the card kinds offered on the rewards screen, and the relics. 1,443 floats. The offered-cards block is what makes a card-pick decision possible: without it, index 172 ("card 0 of reward 0") is a blind pick. Day 14's lesson applies again and is left for you: a slot-aligned head over the five offered cards with embeddings is the next structural step.</p>
+  <pre><code>x = featurise_run(envs.obs)                  # n × 1443
+dist, v = net(x, legal)                      # 355 masked logits; only run-level bits are ever set with combat="greedy"
+rew = run_reward("floor", floor_before, floor_after, done, won)   # 0.1 per floor climbed, +1 on a victory, 0 at death</code></pre>
+
+  <h2>Two rewards, one minute each</h2>
+  <table>
+    <tr><th>policy</th><th>mean final floor (seeds 5,000 to 6,000, 300 runs)</th></tr>
+    <tr><td>random run-level play</td><td>12.15 ± 0.23</td></tr>
+    <tr><td>lowest legal index (first column, claim all, first card, rest)</td><td>14.35 ± 0.34</td></tr>
+    <tr><td>PPO, sparse reward, 20 iterations</td><td>rollout floor 12.4 → 11.3: nothing learned</td></tr>
+    <tr><td>PPO, floor reward, 60 iterations (64 s)</td><td>14.47 ± 0.30, greedy</td></tr>
+  </table>
+  <p>Read it with day 13's eyes. The floor-trained net beat random by two floors, seven standard errors, and matched the trivial rule within noise. In 60 iterations it rediscovered "take the cards": the training floor climbed from 12.4 to about 15 and the entropy fell from 1.45 to 0.8. Beating the rule is the next experiment, and the gap to look at is in the per-phase decisions: the rule rests at every rest site and picks the first card, and both are often wrong. The sparse net's rollout floor went down while it trained: a normalised constant reward is pure noise, and noise with a learning rate is a random walk.</p>
+
+  <div class="toy">
+    <div class="kicker">Toy · the training curve</div>
+    <canvas id="curve" height="200"></canvas>
+    <p class="muted">Rollout mean floor per iteration from the exercise's reference run, seed 0, 64 envs by 64 steps, floor reward, γ 0.995. Each point is about 140 runs, so the noise is ± 0.3.</p>
+  </div>
+
+  <h2>What is different about runs</h2>
+  <ul>
+    <li><b>Length.</b> A greedy-fought run is 25 to 60 agent decisions, 130 engine actions. With T = 64 most rollouts hold a run's end, so GAE still bootstraps from a real value often; with <code>combat="agent"</code> a run is several hundred decisions and T has to grow or γλ has to shrink.</li>
+    <li><b>Loops.</b> A deck selection can be cancelled and reopened for ever. The floor reward gives a loop nothing, so PPO leaves it, but an argmax policy from a random net can fall into one; day 16's <code>measure_floors</code> caps its steps and day 18's "stalling episodes" row is the symptom.</li>
+    <li><b>Throughput.</b> The greedy resolver plans every enemy turn on copies: 4,000 decisions a second on four threads against 300,000 fight steps. The update, not the env, is still what the GPU waits on, but the ratio is a hundred times tighter and the batch is small, so every iteration is a few seconds of real time.</li>
+    <li><b>Two policies in one run.</b> <code>combat="agent"</code> hands the fight decisions to the same net through indices 0 to 139, with the combat observation at offset 1,750 of the run observation. The featuriser can route those bytes through day 14's slot net and the run bytes through this one, and the two heads share the value. That is the design the capstone does not do, and the first thing to try after it.</li>
+  </ul>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>crates/sts2-rl/src/run_obs.rs</code></span>: <code>DECK_AT</code>, <code>RELICS_AT</code>, <code>REWARDS_AT</code> and the reward record's layout, the three multi-hots' sources; <code>COMBAT_AT</code> for the fight bytes inside a run.</li>
+      <li><span class="path"><code>python/sts2/env.py</code></span>: <code>Sts2RunPufferEnv</code>, whose <code>infos</code> carry the final floors, if you move the trainer onto PufferLib.</li>
+      <li><span class="path"><code>python/run_bench.py</code></span>: decisions per second for the three combat modes, the number behind the throughput row.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>With every episode's return equal to −1, the advantage estimate A<sub>t</sub> = G<sub>t</sub> − V(s<sub>t</sub>) is −1 − V(s<sub>t</sub>) for every t once V has fitted, that is zero in expectation and pure estimation noise; normalising the batch rescales that noise to unit variance and the policy takes a random step each iteration. A reward of c per floor makes the return c · (floors still to come), which differs between actions, which is a gradient.</p>
+      <p>The floor reward is not potential-based: Φ = c · floor would give γΦ(s′) − Φ(s) = c(γ floor′ − floor), and at death the terminal Φ is 0, a penalty of −c · floor that the exercise deliberately leaves out so that a death on floor 15 is not worse than one on floor 5. The two objectives have different optima; the exercise's one is "get far", not "get far and die low".</p>
+    </div>
+  </details>
+
+  <script>
+    Course.init();
+    const curve = [12.37, 12.99, 12.14, 12.26, 12.41, 13.09, 13.3, 13.04, 13.31, 13.31, 14.31, 12.71, 13.12, 13.89, 13.57, 13.93, 14.16, 13.92, 13.2, 14.43, 14.94, 14.02, 13.78, 14.39, 15.19, 14.07, 13.16, 13.86, 14.52, 13.82, 14.34, 13.96, 13.52, 13.69, 14.1, 14.42, 13.84, 13.74, 14.45, 14.34, 13.7, 14.18, 14.48, 14.62, 14.55, 14.1, 15.3, 14.37, 14.62, 13.93, 14.95, 15.06, 14.98, 14.57, 15.19, 15.34, 14.66, 15.19, 14.72, 14.59];
+
+    Course.lineChart(document.getElementById('curve'), [{ name: 'rollout mean floor', data: curve.map((v, i) => [i, v]), dots: true }], { ymin: 10, ymax: 16, xlabel: 'iterations', hlines: [{ y: 12.15, label: 'random', color: '--fg3' }, { y: 14.35, label: 'lowest index', color: '--c2' }] });
+    Course.quiz('#quiz', [
+      { q: 'Why did the sparse-reward net learn nothing?', choices: ['The learning rate was too low', 'Every run ended −1, so after normalisation the advantages are noise and the updates are a random walk', 'The run env has no mask'], answer: 1, why: 'A reward that never varies carries no information about which actions were better. Shape by floor until a victory can occur.', hint: 'What is the variance of a constant?' },
+      { q: 'The floor-trained net matched the lowest-index rule within noise. What did it prove?', choices: ['Run-level RL does not work', 'The loop works end to end on runs, and the rule is the number the next experiment has to beat, by the protocol', 'The rule is optimal'], answer: 1, why: 'Equal to a trivial baseline after a minute is a working pipeline, not a result. The report says so and names the next step.', hint: 'What would day 13 say about 14.47 ± 0.30 against 14.35 ± 0.34?' },
+      { q: 'Why does the exercise not use Φ = c · floor as a potential?', choices: ['Potentials cannot be integers', 'The terminal Φ of 0 would penalise dying on a high floor more than on a low one, which is not the objective', 'It would be too slow'], answer: 1, why: 'Shaping that is potential-based keeps the original objective, and the original objective here (victory) is unreachable; the floor reward is a different, chosen objective.', hint: 'What does γΦ(s′) − Φ(s) equal on the step that ends the run?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

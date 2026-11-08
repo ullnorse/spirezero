@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0e1015">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Slay the Spire 2">
+<title>Slay the Spire 2</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" sizes="180x180" href="art/app/icon-180.png">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="extras.css">
+<link rel="stylesheet" href="map.css">
+<link rel="stylesheet" href="combatfx.css">
+<link rel="stylesheet" href="fightfx.css">
+<link rel="stylesheet" href="platform.css">
+<link rel="stylesheet" href="desktop.css">
+<link rel="modulepreload" href="pkg/sts2_web.js">
+</head>
+<body>
+<header id="top"></header>
+<main id="screen"></main>
+<footer id="dock" hidden></footer>
+<div id="toast" role="status"></div>
+<div id="banner" aria-live="polite"></div>
+<div id="sheet" hidden></div>
+<div id="start"><div class="startin"><div class="brand"><span class="big">Slay the Spire 2</span><span class="sub">loading…</span></div></div></div>
+<script type="module" src="platform.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

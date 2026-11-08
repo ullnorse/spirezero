@@ -1,0 +1,27 @@
+//! `Pear` (`Models.Relics/Pear.cs`): `AfterObtained` gains 10 max HP (and heals as much).
+
+use crate::combat::RelicId;
+use crate::combat::hooks::Hooks;
+use crate::content::relics::RelicModel;
+use crate::run::{RunCtx, RunError};
+
+/// `MaxHpVar(10m)`.
+const MAX_HP: i32 = 10;
+
+pub struct Pear;
+
+impl RelicModel for Pear {
+    fn name(&self) -> &'static str {
+        "Pear"
+    }
+
+    fn after_obtained(&self, ctx: &mut RunCtx<'_>, _me: usize) -> Result<(), RunError> {
+        ctx.state().gain_max_hp(MAX_HP);
+        Ok(())
+    }
+}
+
+#[sts2_macros::hooks]
+impl Hooks for Pear {
+    type Me = RelicId;
+}

@@ -1,0 +1,2 @@
+{"character": "Defect", "ascension": 0, "encounter": "FUZZY_WURM_CRAWLER_WEAK",
+ "actions": [{"action": "play_card", "args": {"card_index": 0}}, {"action": "end_turn"}, {"action": "play_card", "args": {"card_index": 1}}, {"action": "play_card", "args": {"card_index": 0}}, {"action": "end_turn"}]}

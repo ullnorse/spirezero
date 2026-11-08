@@ -1,0 +1,18 @@
+[package]
+name = "sts2-rl"
+description = "The RL interface over sts2-core's combat: fixed action space and mask, observation, intent cache, `Envs` batch, start corpus (docs/specs/rl-2x-plan.md, section 7)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sts2-core = { path = "../sts2-core" }
+serde_json = "1"
+
+[dev-dependencies]
+sts2-core = { path = "../sts2-core", features = ["testing"] }

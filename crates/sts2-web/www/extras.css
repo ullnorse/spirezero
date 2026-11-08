@@ -1,0 +1,107 @@
+/* Upgrade preview, History, Daily and share (preview.js, history.js, extras.js). */
+.uppair { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.uppair .card { flex: 0 1 190px; min-width: 0; pointer-events: none; }
+.uppair .card:not(.gamecard) { min-height: 0; }
+.uppair.small .card { flex-basis: 150px; }
+.uparrow { color: var(--gold); font-size: 22px; font-weight: 700; }
+.upsection { margin-top: 6px; }
+.uppop {
+  position: fixed; z-index: 60; padding: 10px 12px; border-radius: var(--r); border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg2) 94%, transparent); box-shadow: var(--shadow); pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+.uppop .uppair { width: min(340px, 90vw); }
+/* The changed words: the new ones lit, the old ones dimmed and struck through. */
+.hl.new { color: #7fff00; font-weight: 700; text-shadow: 0 0 6px rgba(127, 255, 0, .55); }
+.hl.old { opacity: .6; text-decoration: line-through; text-decoration-thickness: 1px; }
+.hl-cost { filter: drop-shadow(0 0 5px #7fff00); }
+
+.startx { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.dailybtn {
+  display: grid; justify-items: start; gap: 2px; min-height: 56px; padding: 8px 14px; border-radius: var(--r);
+  border: 1px solid var(--line); background: var(--surf); text-align: left;
+}
+.dailybtn b { font-size: var(--fs-m); }
+.dailybtn small { color: var(--dim); font-size: var(--fs-xs); }
+.dailybtn:first-child { border-color: var(--gold); }
+
+.hstats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 4px 0 6px; }
+.hstat { display: grid; justify-items: center; padding: 10px 4px; border-radius: var(--r); background: var(--surf); border: 1px solid var(--line); }
+.hstat b { font-size: var(--fs-xl); color: var(--gold); }
+.hstat small { color: var(--dim); font-size: var(--fs-xs); }
+.hline { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.hline .main, .hrun .main { display: grid; gap: 2px; min-width: 0; text-align: left; }
+.hline .sub, .hrun .sub { color: var(--dim); font-size: var(--fs-xs); }
+.hline .right { font-weight: 700; color: var(--gold); }
+.hrun.won .lab { color: var(--heal); }
+.hrun.lost .lab { color: var(--attack); }
+.hfoot, .hacts { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.chipbtn.danger { border-color: var(--attack); color: var(--attack); }
+.hdeck { display: flex; flex-wrap: wrap; gap: 6px; }
+.hcard { padding: 4px 10px; border-radius: var(--pill); border: 1px solid var(--line); background: var(--surf); font-size: var(--fs-xs); }
+.hcard.up { color: #7fff00; }
+.hcard.relic { border-color: var(--gold); margin-left: 0; height: auto; padding: 4px 10px; }
+.hpath { display: grid; gap: 2px; }
+.hstep { display: grid; grid-template-columns: 36px 1fr auto; gap: 8px; font-size: var(--fs-xs); padding: 4px 0; border-bottom: 1px solid var(--line); }
+.hstep .fl { color: var(--dim); }
+.hstep .hp { color: var(--dim); }
+/* An upgrade selection (WEB26): the changes in the game's green; the toggle above the grid shows
+   the cards as they are, each tile's two faces stacked in one place so nothing moves. */
+:root { --up: #7fff00; }
+:root[data-theme="light"] { --up: #2a8a2a; }
+.r-Upgrade { color: var(--up); font-weight: 700; }
+.card.gamecard .r-Upgrade { color: #7fff00; }
+/* A changed cost: the gem's number green; a coin's (no game art) ringed green, its dark number kept. */
+.card .g-cost .upcost, .card .g-cost b.upcost, .card .cost.gem .upcost, .card .cost.gem b.upcost { color: #7fff00; }
+.card .cost:not(.gem):has(.upcost), .card .cost.upcost:not(.gem) { box-shadow: 0 0 0 .15em var(--up), 0 0 .5em var(--up); }
+.uptoggle { display: flex; align-items: center; justify-content: flex-end; gap: .6em; margin: .25em 0 .5em; font-weight: 600; cursor: pointer; }
+.faces { display: inline-grid; }
+.faces > * { grid-area: 1 / 1; }
+.cards:not(.now) .f-now, .cards.now .f-up { visibility: hidden; }
+.card.fromplain .cname .f-now { color: var(--fg); }
+.card.gamecard.fromplain .g-title .f-now { color: #fff6e2; }
+.card.gamecard .g-title .f-now { -webkit-text-stroke-color: var(--outline); }
+.cards.now .card .cost:not(.gem):has(.upcost) { box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+
+/* Compendium (WEB36) and floor-by-floor history: thumb-sized targets, no hover. */
+/* Every tab and filter chip is on screen: they wrap onto more rows instead of scrolling off the edge. */
+.ctabs, .cfilter { display: flex; flex-wrap: wrap; gap: 8px; }
+.ctabs .chipbtn, .cfilter .chipbtn { flex: none; min-height: 44px; padding: 0 16px; }
+.ctabs { gap: 6px; }
+@media (max-width: 899px) { .ctabs .chipbtn { flex: 1 1 auto; justify-content: center; padding: 0 8px; } }
+.ctabs { margin-bottom: 10px; }
+.cfilters { display: grid; gap: 6px; margin-bottom: 8px; }
+.chipbtn.on { border-color: var(--gold); color: var(--gold); }
+.cuprow { display: flex; align-items: center; gap: 10px; margin: 6px 2px 10px; font-size: var(--fs-s); }
+.cuprow .ccount, .ccount { margin-left: auto; color: var(--dim); font-size: var(--fs-s); }
+p.ccount { margin: 2px 2px 8px; }
+.cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+@media (min-width: 900px) { .cgrid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); } }
+.cgrid .citem { grid-column: 1 / -1; }
+.csentinel { height: 1px; }
+.cards.one { grid-template-columns: minmax(120px, 50%); justify-content: center; }
+.citem { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 12px; border-radius: var(--r); border: 1px solid var(--line); background: var(--surf); text-align: left; }
+.citem-ic { flex: none; width: 48px; height: 48px; object-fit: contain; display: grid; place-items: center; }
+.citem-ic.mon { object-fit: contain; border-radius: var(--r-s); }
+.citem-t { display: flex; flex-direction: column; min-width: 0; }
+.citem-t b { font-size: var(--fs-m); }
+.citem-t small { color: var(--dim); font-size: var(--fs-xs); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.citem-big { display: grid; place-items: center; margin: 4px 0 10px; }
+.citem-bigic { max-width: 60%; max-height: 180px; object-fit: contain; }
+.hcard { min-height: 36px; }
+.hfloor { border-bottom: 1px solid var(--line); padding: 2px 0 6px; }
+.hfloor .hstep { border-bottom: 0; }
+.hchoice { font-size: var(--fs-xs); padding-left: 44px; color: var(--fg); }
+.hchoice b { color: var(--gold); font-weight: 600; }
+.hchoice.passed { color: var(--dim); }
+
+/* Copy bug report: the report's text, shown to select only when no copy method worked. */
+.bugbox textarea { width: 100%; box-sizing: border-box; margin-top: 0.5em; font: inherit; font-size: 0.8em; background: var(--panel, transparent); color: inherit; border: 1px solid currentColor; border-radius: 0.4em; }
+
+/* WEB60: on a phone the compendium's filters sit behind one button; desktop keeps the chips. */
+.cfilterbtn { display: none; min-height: 44px; padding: 0 16px; }
+@media (max-width: 599px) {
+  .cfilters { display: none; }
+  .cfilterbtn { display: inline-flex; align-items: center; }
+  .cuprow .cup { margin-left: 4px; }
+}

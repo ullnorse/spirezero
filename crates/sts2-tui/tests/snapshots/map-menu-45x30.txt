@@ -1,0 +1,30 @@
+ Menu                                     ✕
+ ───────────────────────────────────────────
+
+ ┌─────────────────────────────────────────┐
+ │▸d  Deck                                 │
+ │ v  Relics                               │
+ │ i  Potions and powers                   │
+ │ 1  Throw away Fire Potion               │
+ │ 2  Throw away Block Potion              │
+ │ m  Map                                  │
+ │ h  Rooms visited                        │
+ │ ?  Help                                 │
+ │ o  Settings                             │
+ │ q  Quit (the run is saved)              │
+ └─────────────────────────────────────────┘
+
+ Each key opens its list from any screen,
+ without this menu.
+
+
+
+
+
+
+
+
+
+
+
+

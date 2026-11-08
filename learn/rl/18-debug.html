@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Debugging training</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="18-debug">
+<main>
+  <div class="kicker">Week 4 · Day 18</div>
+  <h1>Debugging training</h1>
+  <p class="lead">Day 11 listed what to log and what healthy looks like. Today turns the list into rules a function can apply to a history, and into a sweep that picks hyper-parameters by the protocol. The bugs have signatures; learn them once.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>A PPO run leaks five numbers per iteration: win rate, entropy, clip fraction, approximate KL, value loss. Each common failure moves them in a recognisable pattern before the win rate tells you anything, and most can be told apart from each other. Diagnose from the pattern, then fix the cause, then re-measure with the protocol; never fix by reading the training win rate.</p>
+  </div>
+
+  <h2>Signatures</h2>
+  <table>
+    <tr><th>problem</th><th>signature</th><th>usual causes</th></tr>
+    <tr><td>no learning</td><td>win rate and entropy flat from the first iteration</td><td>mask applied only at sampling; rewards read from the wrong array; done not cutting GAE; optimiser built before <code>net.to(device)</code></td></tr>
+    <tr><td>entropy collapse</td><td>entropy falls to near zero within a few iterations; win rate freezes</td><td>learning rate too high; entropy coefficient 0; too many epochs per rollout</td></tr>
+    <tr><td>policy jumping</td><td>approx KL above 0.05 or clip fraction above 0.5 in some iterations</td><td>learning rate; minibatch too small; advantages not normalised</td></tr>
+    <tr><td>steps too small</td><td>clip fraction under 0.02 and KL under 0.001 throughout</td><td>learning rate too low; gradient clipping too tight; a bug that zeroes most of the gradient</td></tr>
+    <tr><td>value exploding</td><td>value loss grows past the reward scale</td><td>returns on the wrong scale (shaping without rescaling); γ too close to 1 on long stalls; the value head trained on a different featuriser than the policy</td></tr>
+    <tr><td>stalling episodes</td><td>mean length into the hundreds or thousands</td><td>a loop (select, cancel, select in the run env; a 0-cost card that returns to hand); the cap turns it into a loss and <code>StepStats.capped</code> counts it</td></tr>
+  </table>
+
+  <div class="toy">
+    <div class="kicker">Toy · the ratio and its clip, one update at a time</div>
+    <p>A softmax over three actions with advantages (+1, −0.5, −0.5). Each epoch takes one gradient step on the clipped objective. Watch the clip fraction and the KL as the step size and the number of epochs change.</p>
+    <div class="row">
+      <label>step size <input type="range" id="lr" min="0.05" max="2" step="0.05" value="0.3"> <span class="val" id="lrV">0.30</span></label>
+      <label>epochs <input type="range" id="ep" min="1" max="20" value="4"> <span class="val" id="epV">4</span></label>
+      <label>ε <input type="range" id="eps" min="0.05" max="0.5" step="0.05" value="0.2"> <span class="val" id="epsV">0.20</span></label>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">ratio of action 1</div><div class="v" id="ratio">–</div></div>
+      <div class="tile"><div class="k">clip fraction</div><div class="v" id="cf">–</div></div>
+      <div class="tile"><div class="k">approx KL</div><div class="v" id="kl">–</div></div>
+    </div>
+    <canvas id="chart" height="200"></canvas>
+    <p class="muted" id="verdict"></p>
+  </div>
+  <p>Once the ratio of the good action passes 1 + ε its gradient is zero: the objective is flat there, so more epochs do nothing to it and keep pushing the bad actions down until their ratios hit 1 − ε. The clip fraction tells you how much of the batch is in that flat region; 0.1 to 0.3 is the band where the update is still moving but the seatbelt is engaging. A KL that keeps growing with epochs while the clip fraction is already high is the "policy jumping" signature; many trainers stop the epochs when it passes a target.</p>
+
+  <h2>A sweep that respects the protocol</h2>
+  <p>Hyper-parameters interact with seeds. A single-seed sweep over learning rate picks the seed, not the rate. The exercise's <code>sweep</code> runs every config on the same list of seeds, scores each run by day 13's protocol, and <code>pick</code> averages per config with a standard error over seeds. Two seeds and three configs is six runs; day 13's calculator says how many evaluation fights each needs. Diagnose every run as well: a config whose best seed is healthy and whose worst collapses is not a winner.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>crates/sts2-rl/src/envs.rs</code></span>: <code>MAX_EPISODE_ACTIONS</code> (10,000) and <code>StepStats.capped</code>; <span class="path"><code>crates/sts2-rl/src/run_envs.rs</code></span>: <code>MAX_RUN_ACTIONS</code> (60,000) and <code>RunEnd::Stuck</code>, the engine side of the stalling row.</li>
+      <li><span class="path"><code>learn/rl/exercises/solutions/week3/day11_experiment.py</code></span>: <code>format_row</code> and <code>experiment</code>, which write the history the diagnosis reads.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <script>
+    Course.init();
+    const $ = id => document.getElementById(id);
+    function run() {
+      const lr = +$('lr').value, epochs = +$('ep').value, eps = +$('eps').value;
+      $('lrV').textContent = lr.toFixed(2); $('epV').textContent = epochs; $('epsV').textContent = eps.toFixed(2);
+      const adv = [1, -0.5, -0.5];
+      let z = [0, 0, 0];
+      const softmax = z => { const m = Math.max(...z); const e = z.map(v => Math.exp(v - m)); const s = e.reduce((a, b) => a + b); return e.map(v => v / s); };
+      const pOld = softmax(z);
+      const curveR = [], curveCF = [], curveKL = [];
+      let cf = 0, kl = 0;
+      for (let e = 0; e <= epochs; e++) {
+        const p = softmax(z); const ratio = p.map((v, i) => v / pOld[i]);
+        cf = ratio.filter(r => Math.abs(r - 1) > eps).length / 3;
+        kl = pOld.reduce((s, po, i) => s + po * Math.log(po / p[i]), 0);
+        curveR.push([e, ratio[0]]); curveCF.push([e, cf]); curveKL.push([e, kl]);
+        if (e === epochs) break;
+        // gradient of the clipped objective wrt logits, summed over the three (state, action) samples weighted by pOld
+        const grad = [0, 0, 0];
+        for (let a = 0; a < 3; a++) {
+          const r = ratio[a]; const active = adv[a] > 0 ? r < 1 + eps : r > 1 - eps;
+          if (!active) continue;
+          for (let b = 0; b < 3; b++) grad[b] += pOld[a] * adv[a] * r * ((a === b ? 1 : 0) - p[b]);
+        }
+        z = z.map((v, i) => v + lr * grad[i]);
+      }
+      $('ratio').textContent = curveR[curveR.length - 1][1].toFixed(2); $('cf').textContent = cf.toFixed(2); $('kl').textContent = kl.toFixed(4);
+      Course.lineChart($('chart'), [{ name: 'ratio of action 1', data: curveR, dots: true }, { name: 'clip fraction', data: curveCF, color: '--c2', dots: true }, { name: 'KL × 10', data: curveKL.map(([x, y]) => [x, 10 * y]), color: '--c4', dots: true }], { ymin: 0, ymax: Math.max(1.6, ...curveR.map(d => d[1]), ...curveKL.map(d => 10 * d[1])), xlabel: 'epochs', hlines: [{ y: 1 + eps, label: '1 + ε', color: '--fg3' }] });
+      $('verdict').textContent = cf > 0.5 ? 'More than half the samples are clipped: the update is being held back by the seatbelt. Lower the step size or the epochs.' : cf < 0.05 ? 'Almost nothing clipped: the policy barely moved. The step size can go up.' : 'In the band: the update moves and the clip engages on a minority of samples.';
+    }
+    ['lr', 'ep', 'eps'].forEach(k => $(k).addEventListener('input', run)); run();
+
+    Course.quiz('#quiz', [
+      { q: 'Win rate flat at 0.34 and entropy flat at 3.1 from iteration 0. Which suspect first?', choices: ['Learning rate too low', 'A bug between the rollout and the loss: the mask, the reward array, the done cut, or the optimiser not holding the net', 'Not enough iterations'], answer: 1, why: 'A low learning rate moves the numbers slowly; a bug moves them not at all. Check the gradient reaches the policy before touching any coefficient.', hint: 'Does "steps too small" show a clip fraction of exactly zero?' },
+      { q: 'Config A: eval 0.80 on seed 0, 0.58 on seed 1. Config B: 0.74 and 0.73. Which do you ship?', choices: ['A, it has the best run', 'B: its mean is higher than A\'s and its runs are healthy; A\'s seed-1 run is a collapse', 'Neither until you sweep more'], answer: 1, why: 'pick averages over seeds and the diagnosis flags the collapse. A result you can only get on one seed is not a result.', hint: 'Compute the means.' },
+      { q: 'Clip fraction 0.6 and KL rising every epoch. The fix?', choices: ['Raise ε', 'Lower the learning rate or the epochs per rollout, or stop the epochs at a KL target', 'Increase T'], answer: 1, why: 'The policy is moving past the trust region every rollout. Smaller steps, fewer of them.', hint: 'Set the toy to a large step size and 20 epochs.' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

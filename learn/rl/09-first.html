@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your first experiment</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="09-first">
+<main>
+  <div class="kicker">Week 3 · Day 11</div>
+  <h1>Your first experiment</h1>
+  <p class="lead">A concrete plan with the repo's actual env: establish baselines you trust, write the smallest PPO that can work, log the handful of numbers that tell you whether it is working, and know in advance what the first failures look like. Tick things off; the list is saved.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>The goal of experiment one is <b>not</b> a strong agent. It is a training loop you understand end to end, with a win-rate curve that climbs above the random baseline on real Act 1 fights. Every later experiment is a diff against this one, so it should be small, reproducible and boring.</p>
+  </div>
+
+  <h2>Step 1 · Build and trust the env</h2>
+  <pre><code>cargo build --profile ffi -p sts2-ffi             # target/ffi/libsts2_ffi.so
+python -m unittest discover -s python/tests        # smoke: 1,000 random legal steps, layout, stale-build checks
+python python/bench.py 64 20000                    # steps/s from Python; expect a few hundred k</code></pre>
+  <p>Note the numbers the bench prints: actions, episodes, wins and the observation digest. The Rust driver prints the same ones (<code>cargo run --profile ffi -p sts2-ffi --example ffi_bench -- 64 20000</code>); if they match, Python is reading exactly the engine's bytes.</p>
+  <div id="c1"></div>
+
+  <h2>Step 2 · Baselines on a fixed evaluation set</h2>
+  <p>Decide the evaluation protocol before training anything: a fixed start corpus, a fixed seed, N fights, greedy (argmax) actions. Measure:</p>
+  <ul>
+    <li><b>Random legal</b> (<code>sts2.policy.RandomLegal</code>): about 34% on the default Act 1 starts (18,823 wins in 55,231 fights in the perf logs).</li>
+    <li><b>Greedy heuristic</b>: <code>cargo xtask sweep --policy greedy</code> plays Act 1 with a hand-written rule; its per-fight win rate is your "a competent simple policy" line, the mini fight's hand-written rule.</li>
+    <li><b>Episode length</b> for each, so you can spot an agent that stalls.</li>
+  </ul>
+  <div id="c2"></div>
+
+  <h2>Step 3 · The smallest PPO that can work</h2>
+  <p>About eighty lines of torch over <code>Sts2PufferEnv</code>. Raw bytes in, 140 masked logits and a value out. This is a sketch to type in and own, not a library to import. Shapes and the GAE/done handling are the parts worth reading twice.</p>
+  <pre><code>import numpy as np, torch, torch.nn as nn
+from sts2 import Sts2PufferEnv
+
+N, T, EPOCHS, MB = 256, 128, 4, 4096
+GAMMA, LAM, CLIP, ENT, VF, LR = 0.99, 0.95, 0.2, 0.01, 0.5, 3e-4
+env = Sts2PufferEnv(num_envs=N, threads=4)
+OBS, A = env.batch.obs_bytes, env.batch.actions            # 972, 140
+dev = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+class Net(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.body = nn.Sequential(nn.Linear(OBS, 512), nn.ReLU(), nn.Linear(512, 256), nn.ReLU())
+        self.pi, self.v = nn.Linear(256, A), nn.Linear(256, 1)
+    def forward(self, obs, mask):
+        h = self.body(obs.float() / 255.0)                 # crude featuriser; day 10 §2 is the upgrade
+        logits = self.pi(h).masked_fill(~mask, -1e9)
+        return torch.distributions.Categorical(logits=logits), self.v(h).squeeze(-1)
+
+net = Net().to(dev); opt = torch.optim.Adam(net.parameters(), lr=LR, eps=1e-5)
+obs, _ = env.reset(); obs = torch.as_tensor(np.array(obs), device=dev); mask = torch.as_tensor(env.action_masks, device=dev)
+buf = {k: [] for k in ('obs', 'mask', 'act', 'logp', 'rew', 'done', 'val')}
+episodes = wins = 0
+
+for it in range(10_000):
+    for k in buf: buf[k].clear()
+    for t in range(T):                                     # ---- 1. collect
+        with torch.no_grad(): dist, val = net(obs, mask)
+        act = dist.sample()
+        nobs, rew, done, trunc, infos = env.step(act.cpu().numpy().astype(np.int32))
+        for k, v in (('obs', obs), ('mask', mask), ('act', act), ('logp', dist.log_prob(act)), ('val', val),
+                     ('rew', torch.as_tensor(rew, device=dev)), ('done', torch.as_tensor(done, device=dev, dtype=torch.float32))):
+            buf[k].append(v)
+        obs = torch.as_tensor(np.array(nobs), device=dev); mask = torch.as_tensor(env.action_masks, device=dev)
+        for i in infos: episodes += i['episodes']; wins += i['wins']
+    with torch.no_grad(): _, last_val = net(obs, mask)
+    vals = torch.stack(buf['val'] + [last_val]); rews = torch.stack(buf['rew']); dones = torch.stack(buf['done'])
+    adv = torch.zeros_like(rews); gae = 0                  # ---- 2. advantages (GAE); done cuts the chain
+    for t in reversed(range(T)):
+        nonterm = 1.0 - dones[t]                           # env auto-resets, so obs[t+1] after done is a new fight
+        delta = rews[t] + GAMMA * vals[t + 1] * nonterm - vals[t]
+        gae = delta + GAMMA * LAM * nonterm * gae; adv[t] = gae
+    ret = adv + vals[:-1]
+    flat = {k: torch.cat(buf[k]) if k != 'val' else None for k in buf}; adv, ret = adv.flatten(), ret.flatten()
+    adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+    for _ in range(EPOCHS):                                # ---- 3-5. clipped policy loss, value loss, entropy
+        for idx in torch.randperm(N * T, device=dev).split(MB):
+            dist, v = net(flat['obs'][idx], flat['mask'][idx])
+            logp = dist.log_prob(flat['act'][idx]); ratio = (logp - flat['logp'][idx]).exp()
+            pg = -torch.min(ratio * adv[idx], ratio.clamp(1 - CLIP, 1 + CLIP) * adv[idx]).mean()
+            loss = pg + VF * (v - ret[idx]).pow(2).mean() - ENT * dist.entropy().mean()
+            opt.zero_grad(); loss.backward(); nn.utils.clip_grad_norm_(net.parameters(), 0.5); opt.step()
+    if it % 10 == 0:
+        print(f"it {it} steps {(it+1)*N*T} episodes {episodes} win {wins/max(episodes,1):.3f} "
+              f"ent {dist.entropy().mean():.2f} clipfrac {((ratio-1).abs()>CLIP).float().mean():.2f}")
+        episodes = wins = 0</code></pre>
+  <p>Things this sketch gets right that are easy to get wrong: the mask is applied in the logits in both passes; <code>done</code> zeroes the bootstrap value because the env has already reset; advantages are normalised per batch; gradients are clipped. Things it leaves out on purpose: a learning-rate schedule, a separate evaluation pass with argmax actions on the fixed set (add that next; the training win rate includes exploration), checkpoints, and any featurisation.</p>
+  <div id="c3"></div>
+
+  <h2>Step 4 · What to log, and what healthy looks like</h2>
+  <table>
+    <tr><th>metric</th><th>healthy</th><th>when it isn't</th></tr>
+    <tr><td>eval win rate (argmax, fixed set)</td><td>passes random within the first few million steps, keeps climbing for tens of millions</td><td>flat at random: check the mask is applied in logits, the reward sign, and that <code>done</code> cuts GAE</td></tr>
+    <tr><td>training win rate</td><td>a bit below eval (exploration)</td><td>far below eval: entropy too high; far above: you are evaluating on the training distribution by accident</td></tr>
+    <tr><td>entropy</td><td>falls slowly from near log(legal count) and never hits zero</td><td>collapses in the first iterations: LR too high or entropy bonus too low; the policy picked one move and stopped exploring</td></tr>
+    <tr><td>clip fraction</td><td>0.1–0.3</td><td>near 0: steps too small; above 0.5: LR too high or too many epochs</td></tr>
+    <tr><td>approx KL (mean of logp_old − logp)</td><td>around 0.01–0.03 per update</td><td>spikes: the policy jumped; reduce LR or epochs</td></tr>
+    <tr><td>value loss</td><td>decreasing, stabilising below the reward variance</td><td>exploding: returns not normalised, or γ too close to 1 with long stalls</td></tr>
+    <tr><td>episode length</td><td>20–50 steps</td><td>thousands: the agent found a loop that never ends the turn; <code>MAX_EPISODE_ACTIONS</code> ends it as a loss (reward −1) and <code>StepStats.capped</code> counts it</td></tr>
+    <tr><td>steps/s end to end</td><td>within 2–3× of <code>python/bench.py</code></td><td>far lower: the model is the bottleneck (day 10 §6); increase batch, shrink the net, keep tensors on the device</td></tr>
+    <tr><td>illegal actions</td><td>zero, always</td><td>any: the env raises; a non-zero count means the mask you sampled from is not the one from the same step</td></tr>
+  </table>
+  <div class="toy">
+    <div class="kicker">Toy · read the curve</div>
+    <p>Synthetic examples of three runs. Click one and decide what you would do before reading the diagnosis.</p>
+    <div class="row"><button id="h">Run A</button><button id="e">Run B</button><button id="l">Run C</button></div>
+    <canvas id="curves" height="220"></canvas>
+    <div id="diag" class="muted">Pick a run.</div>
+  </div>
+  <div id="c4"></div>
+
+  <h2>Step 5 · The next experiments, in order</h2>
+  <ol>
+    <li><b>An evaluation protocol</b> (day 13): the fixed-seed greedy measurement every later number comes from, with standard errors.</li>
+    <li><b>Featurise</b> (day 14): card embeddings per hand slot and hand-slot-aligned play logits. Measure the jump; on starter decks it is small.</li>
+    <li><b>Shaping</b>, carefully (day 15): HP terms against sparse on the same seeds, judged by the protocol.</li>
+    <li><b>The run env</b> (days 16 and 17): <code>Sts2RunEnvs(combat="greedy")</code> to learn map, reward and shop decisions by floor reached; then <code>combat="agent"</code> with the fight policy plugged in.</li>
+    <li><b>A harder corpus</b>: <code>cargo xtask sweep --emit-starts</code> for real mid-act decks, where the slot net's structure pays.</li>
+  </ol>
+  <div id="c5"></div>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>python/README.md</code></span>: the exact build, test and bench commands.</li>
+      <li><span class="path"><code>python/sts2/env.py</code></span>: <code>Sts2PufferEnv</code>, <code>action_masks</code>, the <code>infos</code> with episode and win counts the sketch reads, <code>Sts2RunPufferEnv</code>.</li>
+      <li><span class="path"><code>python/tests/test_smoke.py</code></span>: the smallest working driver of the env, a good thing to read before writing the trainer.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/envs.rs</code></span>: <code>MAX_EPISODE_ACTIONS</code>, <code>StepStats</code> (capped, unmapped), <code>StepError::Illegal</code>.</li>
+      <li><span class="path"><code>docs/PLAN.md</code></span> and <span class="path"><code>docs/decisions.md</code></span>: the RL milestones and the decisions already taken (rewards are the trainer's; the engine stays reward-free).</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>Two quantities in the log table in symbols. The <b>clip fraction</b> is the share of samples with |r<sub>t</sub> − 1| &gt; ε; it tells you how often the seatbelt engaged. The <b>approximate KL</b> between old and new policy, estimated from the batch, is mean(log π<sub>old</sub>(a|s) − log π(a|s)) (or the lower-variance mean((r − 1) − log r)); it tells you how far the policy moved per update, and many trainers stop the epochs early when it exceeds a target such as 0.02.</p>
+      <p>Entropy of the masked policy is H = −Σ<sub>a legal</sub> π(a|s) log π(a|s); its maximum is log(number of legal actions), which is why "near log(legal count)" is the starting point for a fresh net.</p>
+    </div>
+  </details>
+
+  
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    const $ = id => document.getElementById(id);
+    // persisted checklist
+    const CHECKS = {
+      c1: ['libsts2_ffi.so builds with the ffi profile', 'python/tests pass', 'python/bench.py and ffi_bench print the same digest'],
+      c2: ['fixed evaluation set and seed chosen and written down', 'random-legal win rate and episode length recorded', 'greedy sweep win rate recorded'],
+      c3: ['train.py runs end to end for 10 iterations without an illegal-action error', 'eval pass with argmax actions on the fixed set added', 'checkpoint saved and reloaded once'],
+      c4: ['win rate, entropy, clip fraction, approx KL, value loss, episode length, steps/s logged every N iterations', 'first run passed the random baseline on the eval set'],
+      c5: ['the protocol of day 13 written down and used for every number from here on'],
+    };
+    const KEY = 'spirebot-rl-checklist-v1';
+    let state = {}; try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
+    Object.entries(CHECKS).forEach(([id, items]) => {
+      const root = $(id);
+      items.forEach((txt, i) => {
+        const k = id + ':' + i;
+        const cb = Course.el('input', { type: 'checkbox' }); cb.checked = !!state[k];
+        const lab = Course.el('label', { class: 'check' + (cb.checked ? ' done' : '') }, [cb, Course.el('span', {}, [txt])]);
+        cb.addEventListener('change', () => { state[k] = cb.checked; lab.classList.toggle('done', cb.checked); try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} });
+        root.appendChild(lab);
+      });
+    });
+    // synthetic curves
+    const runs = {
+      h: { name: 'Run A', win: i => 0.34 + 0.45 * (1 - Math.exp(-i / 40)) + 0.03 * Math.sin(i / 3), ent: i => 3.2 - 2.0 * (1 - Math.exp(-i / 60)), diag: 'Healthy. Win rate leaves the random line early and keeps climbing; entropy falls gradually and stays well above zero. Leave it running, add the featuriser as the next experiment.' },
+      e: { name: 'Run B', win: i => i < 12 ? 0.34 + 0.02 * i : 0.52 - 0.1 * Math.exp(-(i - 12) / 10) * Math.sin(i), ent: i => 3.2 * Math.exp(-i / 4), diag: 'Entropy collapse. The policy became deterministic in the first dozen iterations and the win rate froze at whatever it had found by then. Lower the learning rate, raise the entropy coefficient, or reduce epochs; check the clip fraction was not near 1.' },
+      l: { name: 'Run C', win: i => 0.34 + 0.02 * Math.sin(i / 2), ent: i => 3.1 - 0.1 * Math.sin(i / 5), diag: 'Nothing is being learned: win rate sits on the random line and entropy never moves. The gradient is not reaching the policy. Usual suspects: the mask applied only at sampling (so log-probs are wrong), rewards all zero because you read the wrong array, done not cutting GAE, or the optimizer not holding the net\'s parameters.' },
+    };
+    function showRun(k) {
+      const r = runs[k]; const xs = Array.from({ length: 100 }, (_, i) => i);
+      Course.lineChart($('curves'), [{ name: r.name + ': eval win rate', data: xs.map(i => [i, Math.max(0, Math.min(1, r.win(i)))]) }, { name: 'entropy / 4', data: xs.map(i => [i, r.ent(i) / 4]), color: '--accent2' }], { ymin: 0, ymax: 1, xlabel: 'iterations', hlines: [{ y: 0.34, label: 'random legal', color: '--fg3' }] });
+      $('diag').textContent = r.diag;
+    }
+    ['h', 'e', 'l'].forEach(k => $(k).addEventListener('click', () => showRun(k)));
+    showRun('h');
+
+    Course.quiz('#quiz', [
+      { q: 'Why evaluate with argmax actions on a fixed start set instead of reading the training win rate?', choices: ['Argmax is faster', 'Training fights include exploration and a drifting mix of starts; a fixed greedy evaluation is the only number comparable across runs', 'The training win rate is always zero'], answer: 1, why: 'Decide the protocol first, then compare everything against it: random, greedy, every checkpoint.', hint: 'What two things change from iteration to iteration during training?' },
+      { q: 'An episode in the real env runs for thousands of steps. What most likely happened?', choices: ['The fight is an Act 1 elite', 'The policy found a loop that never ends the turn; the cap turns it into a loss', 'The observation buffer overflowed'], answer: 1, why: 'MAX_EPISODE_ACTIONS ends such episodes as losses and StepStats counts them. Watch episode length from day one.', hint: 'See the episode-length row of the table.' },
+      { q: 'Entropy drops to almost zero in the first ten iterations and the win rate stops improving. First thing to try?', choices: ['Train longer', 'Lower the learning rate or raise the entropy coefficient', 'Switch to a bigger network'], answer: 1, why: 'A collapsed policy stops exploring, so no amount of extra data helps. Slow the updates down and keep the distribution spread.', hint: 'Run B.' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

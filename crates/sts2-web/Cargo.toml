@@ -1,0 +1,20 @@
+[package]
+name = "sts2-web"
+description = "The phone browser client: sts2-view's Screen as JSON over wasm-bindgen, plus a plain HTML/JS page (docs/specs/ui-reimagined.md section 3.4)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sts2-core = { path = "../sts2-core" }
+sts2-view = { path = "../sts2-view" }
+serde_json = "1"
+wasm-bindgen = "=0.2.129"

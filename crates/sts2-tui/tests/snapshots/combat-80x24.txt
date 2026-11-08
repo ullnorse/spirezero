@@ -1,0 +1,24 @@
+                 ♥ 80/80   ◉ 300   Floor 2             Tab ≡
+                 ──────────────────────────────────────────────
+                 z ◈ Fire   c ◈ Block                ◆ 2 relics
+                               1 Leaf Slime (S) ›
+                                      ⚔ 3
+                             ▕██████████████▏  8/14  −6
+                               2 Leaf Slime (M) ›
+                                   ✚ 2 Slimed
+                             ▕██████████████▏ 27/33  −6
+                               3 Twig Slime (S) ›
+                                      ⚔ 4
+                              ▕██████████████▏ 1/7  −6
+                                    Ironclad
+                             ▕██████████████▏ 80/80
+                               ⚔ −7 HP next turn
+                 ┌────────────────────────────────────────────┐
+                 │▸1  ϟ1 Strike  Deal 6 damage.              ›│
+                 │ 2  ϟ1 Defend  Gain 5 Block                ›│
+                 │ 3  ϟ1 Defend  Gain 5 Block                ›│
+                 │ 4  ϟ1 Strike  Deal 6 damage               ›│
+                 │ 5  ϟ1 Defend  Gain 5 Block                ›│
+                 └────────────────────────────────────────────┘
+                 ϟ 3/3 Energy   a Draw 6 · s Discard 0
+                                 e   End Turn

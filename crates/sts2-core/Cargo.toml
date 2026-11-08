@@ -1,0 +1,26 @@
+[package]
+name = "sts2-core"
+description = "Deterministic Slay the Spire 2 engine core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sts2-macros = { path = "../sts2-macros" }
+# Inline buffers for the engine's short-lived lists (decisions.md 2026-10-23, speed dependencies).
+smallvec = { version = "1.15", features = ["union", "const_generics"] }
+
+[features]
+# `Combat::edit` for other crates' tests (the RL observation's leak test).
+testing = []
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# The counting global allocator of the `it` test binary (`tests/it/copy_alloc.rs`).
+allocation-counter = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><title>selftest</title><link rel="stylesheet" href="style.css">
+<script src="common.js"></script></head>
+<body><main><h1>Mini-fight self test</h1><pre id="out">running…</pre>
+<script src="fight.js"></script>
+<script>
+const out = [];
+const t0 = performance.now();
+const r = Fight.evaluate(Fight.randomPolicy, 100000, 1);
+out.push(`random: win ${Course.pct(r.winRate)} steps ${r.meanSteps.toFixed(1)}`);
+const h = Fight.evaluate(Fight.heuristicPolicy, 20000, 1);
+out.push(`heuristic: win ${Course.pct(h.winRate)} steps ${h.meanSteps.toFixed(1)}`);
+for (const [n, p] of [['berserk', Fight.berserkPolicy], ['turtle', Fight.turtlePolicy], ['random cards', Fight.randomCardPolicy]]) {
+  const b = Fight.evaluate(p, 20000, 1); out.push(`${n}: win ${Course.pct(b.winRate)} steps ${b.meanSteps.toFixed(1)}`);
+}
+out.push(`eval speed: ${Course.fmtInt(60000 * r.meanSteps / ((performance.now() - t0) / 1000))} steps/s`);
+for (const name of ['coarse', 'full', 'blind']) {
+  const q = Fight.QAgent({ key: Fight.FEATURIZERS[name], alpha: 0.1, eps: 0.1, gamma: 0.99, rand: Course.rng(3) });
+  const t1 = performance.now();
+  const marks = [2000, 10000, 30000];
+  const line = [];
+  for (let i = 1; i <= 30000; i++) { q.episode(); if (marks.includes(i)) { line.push(`${i}: ${Course.pct(Fight.evaluate(q.policy, 3000, 5).winRate)}`); } }
+  out.push(`Q ${name}: ${line.join(' | ')} table ${q.Q.size} (${((performance.now() - t1) / 1000).toFixed(1)} s)`);
+}
+document.getElementById('out').textContent = out.join('\n');
+</script></main></body></html>

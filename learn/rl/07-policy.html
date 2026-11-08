@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Policy gradients and PPO</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="07-policy">
+<main>
+  <div class="kicker">Week 2 · Day 9</div>
+  <h1>Policy gradients and PPO: push up what worked</h1>
+  <p class="lead">Q-learning learns values and derives the policy from them. There is a more direct route: keep a probability for each action and, after each fight, raise the probabilities of the moves you made if you won and lower them if you lost. That is a policy gradient. PPO is the version of it that works reliably at scale, and it is what you will run on SpireZero.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>The agent's policy is a set of probabilities, π(a | s), one per legal action per state. Play a fight by sampling from them. At the end you know the return G (+1 or −1). The update is almost embarrassingly simple:</p>
+    <p style="text-align:center"><b>For every (state, action) in the fight: nudge π(action | state) up if G was good, down if G was bad.</b></p>
+    <p>Three problems show up immediately, and each has a fix with a name:</p>
+    <ul>
+      <li><b>Credit assignment.</b> You won, but was it because of the Defend on turn 2 or in spite of it? The raw update blames every move equally. The fix is to compare each move's outcome against what you <i>expected</i> from that state: the <b>advantage</b>, A = G − V(s). A win from a state worth +0.9 teaches almost nothing; a win from a state worth −0.5 teaches a lot. V comes from a learned critic (day 5's value, day 8's net).</li>
+      <li><b>Noise.</b> One fight's outcome is a coin flip. Average over many fights per update.</li>
+      <li><b>Overshooting.</b> A big step on a noisy estimate can wreck a policy that took hours to learn, and then the fights it plays next are garbage, so the data is garbage. PPO's fix: <b>clip</b> how far any one update may move an action's probability.</li>
+    </ul>
+  </div>
+
+  <div class="toy">
+    <div class="kicker">Toy · REINFORCE on the mini fight</div>
+    <p>A tabular policy (one probability triple per coarse state), trained by the raw rule above. Toggle the baseline to see what the advantage buys. The bars show the policy's probabilities in one probe state: Chomp incoming for lethal damage, 3 energy, 3 Strikes and 2 Defends in hand.</p>
+    <div class="row">
+      <label>α step size <input type="range" id="alpha" min="0.01" max="0.5" step="0.01" value="0.1"> <span class="val" id="alphaV">0.10</span></label>
+      <label><input type="checkbox" id="baseline" checked> subtract a baseline (advantage instead of raw return)</label>
+      <button class="primary" id="train">Train</button><button id="pause">Pause</button><button id="reset">Reset</button>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">episodes</div><div class="v" id="n">0</div></div>
+      <div class="tile"><div class="k">win rate (last 500)</div><div class="v" id="wr">–</div></div>
+      <div class="tile"><div class="k">probe state: P(Defend)</div><div class="v" id="pd">–</div></div>
+    </div>
+    <canvas id="chart" height="200"></canvas>
+    <div class="muted">policy in the probe state (lethal Chomp incoming, 3 energy, 3 Strike 2 Defend):</div>
+    <canvas id="probe" height="90"></canvas>
+  </div>
+  <p>Compared with Q-learning this is slower and noisier, and in the toy that's all you see. Its advantages appear at scale: it handles large and masked action spaces naturally (just zero out the illegal probabilities), it can learn stochastic policies, and the update is a plain gradient step on a neural net, which is exactly what deep learning tooling is good at.</p>
+
+  <h2>PPO, in pictures</h2>
+  <p><b>Proximal Policy Optimization</b> is a policy gradient with a seatbelt. For each action taken, compute the ratio between how likely the <i>new</i> policy makes it and how likely the <i>old</i> one did. The update wants ratio &gt; 1 for good actions (advantage positive) and &lt; 1 for bad ones. PPO says: once the ratio has moved past 1 ± ε in the direction the advantage wants, stop pushing. Drag the slider.</p>
+  <div class="toy">
+    <div class="kicker">Toy · the clipped objective</div>
+    <div class="row">
+      <label>clip ε <input type="range" id="clip" min="0.05" max="0.5" step="0.01" value="0.2"> <span class="val" id="clipV">0.20</span></label>
+      <label>advantage <select id="adv"><option value="1">positive (good action)</option><option value="-1">negative (bad action)</option></select></label>
+    </div>
+    <canvas id="clipChart" height="220"></canvas>
+    <p class="muted">x: ratio π<sub>new</sub>(a|s) / π<sub>old</sub>(a|s). y: the objective being maximised. Where the curve is flat, the gradient is zero and the update has no more effect: the policy can't run away on one batch of data.</p>
+  </div>
+
+  <h2>PPO, in words: the five parts of one training iteration</h2>
+  <ol>
+    <li><b>Collect.</b> Run the current policy in N parallel envs for T steps each (say 256 envs × 128 steps = 32,768 transitions). Store observation, mask, action, the action's log-probability under the policy, the reward, done, and the critic's V(s).</li>
+    <li><b>Advantages.</b> For each transition compute A = (what actually happened afterwards) − V(s). In practice "what happened afterwards" is a blend of the real rewards for a few steps and the critic's estimate beyond (<b>GAE</b>, with a knob λ between "trust the critic" and "trust the rollout"). Normalise the batch of advantages to mean 0, std 1.</li>
+    <li><b>Update the policy.</b> Several passes (epochs) over the batch in minibatches, maximising the clipped objective above. Illegal actions are masked out of the softmax before anything is computed.</li>
+    <li><b>Update the critic.</b> Regress V(s) toward the observed returns (mean squared error). Usually the policy and critic share a body and are trained together with the losses added.</li>
+    <li><b>Entropy bonus.</b> Add a small reward for keeping the policy's probabilities spread out, so it doesn't collapse onto one action before it has explored. This is PPO's version of day 4's ε.</li>
+  </ol>
+  <p>Then throw the batch away (the policy has changed; the data is stale) and go back to step 1. That last sentence is why env speed matters so much for PPO: it is <b>on-policy</b>, every iteration needs fresh fights, and the number of fights it can afford per hour is set by the environment's step rate.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>python/sts2/env.py</code></span>: <code>Sts2PufferEnv</code> is the N-parallel-envs object step 1 needs, with <code>action_masks</code> for step 3 and the per-env reward and terminal flags for step 2. Its <code>step</code> auto-resets finished fights, so a rollout buffer sees continuous data.</li>
+      <li>PufferLib (<code>pufferlib.PufferEnv</code>, optional in the binding) ships a PPO trainer that consumes exactly this interface. Writing a small PPO yourself first (day 11) is the better way to learn it.</li>
+      <li>The on-policy data appetite is the reason behind <span class="path"><code>docs/specs/rl-2x-plan.md</code></span>: the whole 2× speed programme exists so step 1 is cheap.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>Let the policy have parameters θ. The <b>policy gradient theorem</b> says the gradient of expected return is</p>
+      <div class="formula">∇<sub>θ</sub> J = E[ Σ<sub>t</sub> ∇<sub>θ</sub> log π<sub>θ</sub>(a<sub>t</sub> | s<sub>t</sub>) · A<sub>t</sub> ]</div>
+      <p>Read: move each taken action's log-probability in proportion to its advantage. REINFORCE uses A<sub>t</sub> = G<sub>t</sub> − b with a constant baseline b; actor-critic uses A<sub>t</sub> = G<sub>t</sub> − V(s<sub>t</sub>). For a tabular softmax, ∂ log π(a)/∂z<sub>b</sub> = 1[a = b] − π(b), which is the update the toy applies.</p>
+      <p>PPO's clipped surrogate, with r<sub>t</sub>(θ) = π<sub>θ</sub>(a<sub>t</sub>|s<sub>t</sub>) / π<sub>old</sub>(a<sub>t</sub>|s<sub>t</sub>):</p>
+      <div class="formula">L<sup>CLIP</sup> = E[ min( r<sub>t</sub> A<sub>t</sub>, clip(r<sub>t</sub>, 1 − ε, 1 + ε) A<sub>t</sub> ) ]</div>
+      <p>The full loss is −L<sup>CLIP</sup> + c<sub>1</sub> · (V(s<sub>t</sub>) − G<sub>t</sub>)<sup>2</sup> − c<sub>2</sub> · H[π(·|s<sub>t</sub>)], with typical c<sub>1</sub> = 0.5, c<sub>2</sub> = 0.01, ε = 0.2. GAE: A<sub>t</sub> = Σ<sub>k</sub> (γλ)<sup>k</sup> δ<sub>t+k</sub> with δ<sub>t</sub> = r<sub>t</sub> + γV(s<sub>t+1</sub>) − V(s<sub>t</sub>), λ ≈ 0.95.</p>
+    </div>
+  </details>
+
+  
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    const F = Fight;
+    const $ = id => document.getElementById(id);
+    $('alpha').addEventListener('input', e => $('alphaV').textContent = (+e.target.value).toFixed(2));
+    // probe state
+    const probe = F.newFight(Course.rng(1)); probe.playerHp = 10; probe.enemyHp = 30; probe.strikes = 3; probe.defends = 2; probe.turn = 2; probe.intent = 'chomp';
+    const probeKey = F.coarseKey(probe);
+    let theta, n, recent, curve, base, loop;
+    function softmax(z, m) { const mx = Math.max(...z.filter((_, i) => m[i])); const e = z.map((v, i) => m[i] ? Math.exp(v - mx) : 0); const s = e.reduce((a, b) => a + b, 0); return e.map(v => v / s); }
+    function th(k) { let v = theta.get(k); if (!v) { v = [0, 0, 0]; theta.set(k, v); } return v; }
+    function reset() { theta = new Map(); n = 0; recent = []; curve = []; base = 0; if (loop) loop.stop(); draw(); }
+    function episode(rand) {
+      const s = F.newFight(rand), traj = [];
+      while (!s.done && s.steps < 400) {
+        const k = F.coarseKey(s), m = F.legal(s), p = softmax(th(k), m);
+        let r = rand(), a = 0; for (a = 0; a < 3; a++) { r -= p[a]; if (r <= 0) break; } if (a > 2) a = 2; while (!m[a]) a = (a + 1) % 3;
+        traj.push([k, a, p, m]); F.step(s, a, rand);
+      }
+      const G = s.won ? 1 : -1, alpha = +$('alpha').value, useB = $('baseline').checked;
+      const adv = useB ? G - base : G;
+      for (const [k, a, p, m] of traj) { const z = th(k); for (let b = 0; b < 3; b++) if (m[b]) z[b] += alpha * adv * ((b === a ? 1 : 0) - p[b]); }
+      base += 0.01 * (G - base);
+      return s;
+    }
+    function draw() {
+      $('n').textContent = Course.fmtInt(n); $('wr').textContent = recent.length >= 50 ? Course.pct(recent.reduce((a, b) => a + b, 0) / recent.length) : '–';
+      const p = softmax(th(probeKey), [true, true, true]);
+      $('pd').textContent = Course.pct(p[1]);
+      Course.lineChart($('chart'), [{ name: 'win rate while training', data: curve }], { ymin: 0, ymax: 1, xlabel: 'episodes', yfmt: v => (100 * v).toFixed(0) + '%' });
+      Course.bars($('probe'), p, F.ACTIONS, { max: 1, fmt: v => Course.pct(v), labelWidth: 100 });
+    }
+    const rand = Course.rng(Date.now() & 0xffff);
+    $('train').addEventListener('click', () => { if (loop && loop.running) return; loop = Course.runLoop(() => { for (let i = 0; i < 30; i++) { const s = episode(rand); n++; recent.push(s.won ? 1 : 0); if (recent.length > 500) recent.shift(); if (n % 100 === 0) curve.push([n, recent.reduce((a, b) => a + b, 0) / recent.length]); } draw(); return n < 300000; }, 14); });
+    $('pause').addEventListener('click', () => { if (loop) loop.stop(); });
+    $('reset').addEventListener('click', reset);
+    reset();
+
+    // clip chart
+    function drawClip() {
+      const eps = +$('clip').value, A = +$('adv').value; $('clipV').textContent = eps.toFixed(2);
+      const xs = []; for (let r = 0.3; r <= 1.9; r += 0.01) xs.push(r);
+      const unclipped = xs.map(r => [r, r * A]);
+      const clipped = xs.map(r => [r, Math.min(r * A, Math.max(1 - eps, Math.min(1 + eps, r)) * A)]);
+      const { X, Y } = Course.lineChart($('clipChart'), [{ name: 'plain policy gradient objective r·A', data: unclipped, color: '--fg3', width: 1 }, { name: 'PPO clipped objective', data: clipped, color: '--accent', width: 3 }], { ymin: -2, ymax: 2, xfmt: v => v.toFixed(1), xlabel: 'ratio' });
+      const c = $('clipChart').getContext('2d'); c.strokeStyle = Course.color('--warn'); c.setLineDash([3, 3]);
+      [1 - eps, 1 + eps].forEach(v => { c.beginPath(); c.moveTo(X(v), Y(-2)); c.lineTo(X(v), Y(2)); c.stroke(); });
+      c.setLineDash([]); c.fillStyle = Course.color('--warn'); c.font = '12px system-ui'; c.textAlign = 'center'; c.fillText('1−ε', X(1 - eps), 24); c.fillText('1+ε', X(1 + eps), 24);
+      c.fillStyle = Course.color('--fg2'); c.fillText(A > 0 ? 'good action: pushing r above 1+ε earns nothing more' : 'bad action: pushing r below 1−ε earns nothing more', X(1.1), Y(A > 0 ? -1.6 : 1.7));
+    }
+    $('clip').addEventListener('input', drawClip); $('adv').addEventListener('change', drawClip); drawClip();
+    window.addEventListener('themechange', drawClip);
+
+    Course.quiz('#quiz', [
+      { q: 'What does subtracting a baseline (using the advantage) change about the REINFORCE update?', choices: ['It makes wins count double', 'It stops rewarding moves made in states that were already going to win, cutting noise without changing what is optimal', 'It removes the need for exploration'], answer: 1, why: 'The expected update is the same with or without a baseline; the variance is much lower with one. That is why every practical method uses a critic.', hint: 'What does a win from an already-winning state tell you about the moves?' },
+      { q: 'In PPO, an action had advantage +2 and the new policy already makes it 1.3× as likely as the old one, with ε = 0.2. What happens on the next minibatch?', choices: ['Its probability keeps increasing in proportion to the advantage', 'The gradient for that sample is zero: it is past the clip and contributes nothing more', 'The sample is discarded as an outlier'], answer: 1, why: 'The objective is flat beyond 1 + ε for positive advantages, so there is nothing left to push. Other samples still update the shared parameters.', hint: 'Set the slider to 0.2 and read the curve to the right of 1.2.' },
+      { q: 'Why is PPO called "on-policy", and why does that make environment speed matter so much?', choices: ['It only runs on a single CPU', 'Each update needs fresh fights played by the current policy; old data cannot be reused, so throughput is set by env steps per second', 'It trains the policy and the critic on the same GPU'], answer: 1, why: 'A batch is used for a few epochs and then discarded. Millions of steps per hour from the env is what makes that workable.', hint: 'What happens to the collected batch at the end of an iteration?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

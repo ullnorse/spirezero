@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rewards, returns, discount</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="10-returns">
+<main>
+  <div class="kicker">Week 1 · Day 3</div>
+  <h1>Rewards, returns, discount</h1>
+  <p class="lead">The reward arrives once, at the end. Every step before it has to be judged by what it led to. The return is that judgement, and the discount factor is the one knob on it.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>A step's <b>return</b> G<sub>t</sub> is the sum of the rewards from that step to the end of the fight. With +1/−1 at the end and 0 elsewhere, every step of a won fight has return +1 and every step of a lost fight −1: the outcome is copied back onto every decision that preceded it, good or bad. That is the only signal the learner gets about a decision, and it is the same signal for all 30 decisions of the fight. Separating the decisive moves from the irrelevant ones is what the next two weeks build.</p>
+    <p>The <b>discount</b> γ shrinks rewards by γ for every step they are away: G<sub>t</sub> = r<sub>t</sub> + γ r<sub>t+1</sub> + γ² r<sub>t+2</sub> + …. With γ = 0.99 a win 30 steps out is worth 0.74 now, so faster wins are worth more and a stall is worth less than a kill. With γ = 0.9 the win 30 steps out is worth 0.04, nearly invisible: the learner becomes short-sighted. SpireZero's PPO uses 0.99.</p>
+    <p><b>Shaping</b> adds rewards along the way, say −0.01 per HP lost. It makes G<sub>t</sub> vary from step to step, which gives the learner more to work with, and it changes what the best policy is: an agent paid for HP will trade damage dealt for damage avoided. The real env never shapes; the trainer does, from <code>done</code>, <code>won</code> and the HP in the observation.</p>
+  </div>
+
+  <div class="toy">
+    <div class="kicker">Toy · one fight, every step's return</div>
+    <p>The hand-written rule plays a fight. Each bar is one step; its height is G<sub>t</sub> under the chosen γ and reward.</p>
+    <div class="row">
+      <label>γ <input type="range" id="gamma" min="0.5" max="1" step="0.01" value="1"> <span class="val" id="gammaV">1.00</span></label>
+      <label>reward <select id="rew">
+        <option value="sparse">+1 win, −1 loss</option>
+        <option value="hp">plus −0.01 per HP lost</option>
+        <option value="dmg">plus +0.01 per damage dealt</option>
+      </select></label>
+      <button class="primary" id="again">Another fight</button>
+      <span class="muted" id="outcome"></span>
+    </div>
+    <canvas id="chart" height="220"></canvas>
+    <div class="log" id="log"></div>
+  </div>
+  <p>With the sparse reward and γ = 1 the chart is flat: the return of every step is the outcome. Lower γ and the bars shrink toward the start of the fight. Switch on the HP term and the bars drop at the steps where the Worm's hit lands, which is the end-of-turn step, not the step that failed to block. The credit still sits one step off from the decision that caused it.</p>
+
+  <div class="toy">
+    <div class="kicker">Toy · what γ does to the mean return</div>
+    <p>1,000 fights by the rule and by the random-over-cards agent. The mean return is the number a trainer compares between policies.</p>
+    <div class="row"><button class="primary" id="run">Run</button></div>
+    <canvas id="means" height="200"></canvas>
+    <div class="muted" id="meansNote"></div>
+  </div>
+  <p>Under γ = 1 the mean return is 2 × win rate − 1. Under γ &lt; 1 the two policies' returns move apart in a way the win rate does not show: the rule wins fast, the random agent wins slowly, so the discount punishes the random agent twice.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>python/sts2/env.py</code></span>: <code>Sts2PufferEnv.step</code> writes <code>rewards[:] = where(done, where(won, 1, -1), 0)</code>. That line is the whole reward function.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/envs.rs</code></span>: a fight that runs past <code>MAX_EPISODE_ACTIONS</code> ends with <code>done</code> set and <code>won</code> clear: a stall is a loss.</li>
+      <li><span class="path"><code>docs/decisions.md</code></span>: rewards belong to the trainer; the engine exposes <code>done</code>, <code>won</code>, HP and block and nothing else.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <div class="formula">G<sub>t</sub> = Σ<sub>k≥0</sub> γ<sup>k</sup> r<sub>t+k</sub> = r<sub>t</sub> + γ G<sub>t+1</sub></div>
+      <p>The second form is how it is computed: one pass backwards from the last step, with G<sub>T</sub> = r<sub>T</sub>. The exercise does exactly this.</p>
+      <p>γ &lt; 1 also keeps the sum finite when episodes never end (a reward bounded by R gives |G| ≤ R / (1 − γ)) and sets a horizon: rewards beyond about 1 / (1 − γ) steps barely count. For γ = 0.99 that horizon is 100 steps, longer than a fight, which is why 0.99 behaves almost like 1 here while still preferring shorter wins.</p>
+    </div>
+  </details>
+
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    const F = Fight;
+    const gammaEl = document.getElementById('gamma'), gammaV = document.getElementById('gammaV'), rewEl = document.getElementById('rew');
+    const chart = document.getElementById('chart'), logEl = document.getElementById('log'), outcome = document.getElementById('outcome');
+    let rand = Course.rng(Date.now() & 0xffff);
+    let steps = [];
+
+    // Records one fight by the hand-written rule: per step the action, the sparse reward and
+    // the HP lost / damage dealt on that step (for the shaped variants).
+    function record() {
+      const s = F.newFight(rand);
+      steps = [];
+      while (!s.done && s.steps < 400) {
+        const a = F.heuristicPolicy(s, F.legal(s), rand);
+        const hp0 = s.playerHp, e0 = s.enemyHp;
+        const r = F.step(s, a, rand);
+        steps.push({ a, reward: r.reward, hpLost: hp0 - s.playerHp, dealt: e0 - s.enemyHp, turn: s.turn, events: r.events.join(' · ') });
+      }
+      outcome.textContent = `${steps.length} steps, ${s.won ? 'won' : 'lost'}`;
+    }
+    function rewards() {
+      const kind = rewEl.value;
+      return steps.map(st => st.reward + (kind === 'hp' ? -0.01 * st.hpLost : kind === 'dmg' ? 0.01 * st.dealt : 0));
+    }
+    function returns(rs, gamma) {
+      const g = new Array(rs.length).fill(0);
+      let acc = 0;
+      for (let t = rs.length - 1; t >= 0; t--) { acc = rs[t] + gamma * acc; g[t] = acc; }
+      return g;
+    }
+    function draw() {
+      const gamma = parseFloat(gammaEl.value);
+      gammaV.textContent = gamma.toFixed(2);
+      const rs = rewards(), gs = returns(rs, gamma);
+      Course.lineChart(chart, [
+        { name: 'return G_t', data: gs.map((g, t) => [t, g]), dots: true },
+        { name: 'reward r_t', data: rs.map((r, t) => [t, r]), color: '--c2', width: 1 },
+      ], { ymin: -1.05, ymax: 1.05, xlabel: 'step', yfmt: v => v.toFixed(2) });
+      logEl.innerHTML = '';
+      steps.forEach((st, t) => {
+        const d = document.createElement('div');
+        d.innerHTML = `<span class="s">#${t}</span> ${F.ACTIONS[st.a]} <span class="muted">${st.events}</span> &nbsp;r ${rs[t].toFixed(2)} &nbsp;<b>G ${gs[t].toFixed(3)}</b>`;
+        logEl.appendChild(d);
+      });
+    }
+    gammaEl.addEventListener('input', draw);
+    rewEl.addEventListener('change', draw);
+    document.getElementById('again').addEventListener('click', () => { record(); draw(); });
+    record(); draw();
+
+    // Mean return of two policies over a range of gamma.
+    const means = document.getElementById('means');
+    document.getElementById('run').addEventListener('click', () => {
+      const gammas = [1, 0.99, 0.97, 0.95, 0.9, 0.8];
+      const pols = [['hand-written rule', F.heuristicPolicy, '--c1'], ['random over cards', F.randomCardPolicy, '--c2']];
+      const series = [];
+      const note = [];
+      pols.forEach(([name, pol, color]) => {
+        const r2 = Course.rng(42);
+        const lengths = [], wons = [];
+        for (let i = 0; i < 1000; i++) { const s = F.play(pol, r2); lengths.push(s.steps); wons.push(s.won ? 1 : -1); }
+        const data = gammas.map(g => [g, wons.reduce((acc, w, i) => acc + w * Math.pow(g, lengths[i] - 1), 0) / 1000]);
+        series.push({ name, data, color, dots: true });
+        note.push(`${name}: win rate ${Course.pct(wons.filter(w => w > 0).length / 1000)}, mean length ${(lengths.reduce((a, b) => a + b, 0) / 1000).toFixed(1)} steps`);
+      });
+      Course.lineChart(means, series, { ymin: -1, ymax: 1, xlabel: 'γ', xfmt: v => v.toFixed(2), yfmt: v => v.toFixed(2) });
+      document.getElementById('meansNote').textContent = note.join(' · ');
+    });
+
+    Course.quiz('#quiz', [
+      { q: 'Under the sparse reward with γ = 1, what is the return of the first step of a fight that is lost 40 steps later?', choices: ['0, nothing happened on that step', '−1, the outcome is copied back onto every step', '−1/40, the loss is shared out'], answer: 1, why: 'The return sums every later reward. With one terminal reward, every step inherits it whole.', hint: 'Sum the rewards from that step to the end.' },
+      { q: 'Why is γ = 0.99 preferred to γ = 1 even though a fight never runs for 100 steps?', choices: ['It makes the return smaller, which is numerically safer', 'A quicker win is worth more than a slow one, so stalling is discouraged', 'It is required for the sum to converge in a fight'], answer: 1, why: 'A win 20 steps out is worth 0.82, one 40 steps out 0.67. The discount turns speed into reward without any shaping.', hint: 'Compare a 20-step win and a 40-step win.' },
+      { q: 'An agent paid −0.01 per HP lost learns to Defend every turn and never kills the Worm. What happened?', choices: ['A bug in the env', 'The shaped reward made a different policy optimal, and the agent found it', 'γ was too low'], answer: 1, why: 'Shaping changes the objective. If avoiding damage pays more reliably than the eventual +1, the agent is right to turtle. The reward has to be designed so the best policy is the one you want.', hint: 'The agent maximises the reward it is given, not the one you meant.' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

@@ -1,0 +1,35 @@
+
+
+        ♥ 80/80   ◉ 300   Floor 2                                                                      Tab ≡
+        ───────────────────────────────────────────────────────────────────────────────────────────────────────
+        z ◈ Fire   c ◈ Block                                ◆ Burning Blood  ◆ Neow's Torment  ◆ Toasty Mittens
+
+                1 Leaf Slime (S) ›                2 Leaf Slime (M) ›                 3 Twig Slime (S) ›
+                    ⚔ 3 damage                        ✚ 2 Slimed                        ⚔ 4 damage
+        ▕█████████████████████████▏ 14/14 ▕█████████████████████████▏ 33/33 ▕████████████████████████████▏ 7/7
+        ▕█████████████████████████▏       ▕█████████████████████████▏       ▕████████████████████████████▏
+
+                                                       Ironclad
+                                ▕██████████████████████████████████████████████▏ 80/80
+                                ▕██████████████████████████████████████████████▏
+                                              Incoming: after your choice
+                                                    Round 1: drew 5
+        ┌ Toasty Mittens · Choose a card to Exhaust (0 of 1) ─────────────────────────────────────────────────┐
+        │▸1  ϟ1 Strike  Attack                                                                               ›│
+        │       Deal 6 damage.                                                                                │
+        │                                                                                                     │
+        │ 2  ϟ1 Defend  Skill                                                                                ›│
+        │       Gain 5 Block.                                                                                 │
+        │                                                                                                     │
+        │ 3  ϟ1 Defend  Skill                                                                                ›│
+        │       Gain 5 Block.                                                                                 │
+        │                                                                                                     │
+        │ 4  ϟ1 Strike  Attack                                                                               ›│
+        │       Deal 6 damage.                                                                                │
+        │                                                                                                     │
+        │ 5  ϟ1 Defend  Skill                                                                                ›│
+        │       Gain 5 Block.                                                                                 │
+        │                                                                                                     │
+        └─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+        ϟ 3/3 Energy   a Draw 6 · s Discard 0

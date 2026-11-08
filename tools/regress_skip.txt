@@ -1,0 +1,5 @@
+# Encounters regress.sh does not run because the referee itself cannot play them (a harness stall or crash, not an
+# engine divergence), so a known referee bug cannot turn regress red. One per line:
+#   <Encounter> [<loadout file stem>]  # reason (required), with the task that will fix the referee
+# The encounter is an engine name or a referee id; without a loadout stem every run of the encounter is skipped
+# (bare and in every loadout). regress.sh prints each skipped run. Keep this empty: fix the referee instead.

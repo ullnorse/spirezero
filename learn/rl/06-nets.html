@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why tables break</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="06-nets">
+<main>
+  <div class="kicker">Week 2 · Day 8</div>
+  <h1>Why tables break, and how neural nets fill the gaps</h1>
+  <p class="lead">The exact-state table in day 6 had twenty thousand rows for two card types and one enemy. The real game's observation is 972 bytes. No table can hold it, and worse, no table can learn anything about a state it has never visited. Intuition only in this lesson; no gradients yet.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>A table treats every state as unrelated to every other. "HP 12 vs Worm 20" and "HP 13 vs Worm 20" are separate rows; learning one tells it nothing about the other. You know they are nearly the same situation. A <b>function approximator</b> encodes that knowledge: instead of a row per state it holds a <i>formula</i> from observation to value (or to action probabilities), with a few thousand to a few million adjustable numbers (<b>parameters</b>). Training adjusts the parameters so the formula fits the states it saw. Nearby states then get nearby outputs for free. That's <b>generalization</b>, and a <b>neural network</b> is the function approximator that turned out to be flexible enough for almost anything.</p>
+    <p>The trade: tables are exact but can't generalize; nets generalize but are approximate, and a change that fixes one state can nudge others. Everything in deep RL is about living with that trade.</p>
+  </div>
+
+  <div class="toy">
+    <div class="kicker">Toy · how big is the table, really?</div>
+    <p>Count the distinct rows a tabular agent creates in 5,000 training fights of the mini fight, and how often its greedy policy then lands in a state it has never seen.</p>
+    <div class="row">
+      <label>observation <select id="feat"><option value="blind">energy and hand only</option><option value="coarse">coarse buckets</option><option value="full">every number</option></select></label>
+      <button class="primary" id="count">Train 5,000 and count</button>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">rows created</div><div class="v" id="rows">–</div></div>
+      <div class="tile"><div class="k">rows seen fewer than 5 times</div><div class="v" id="rare">–</div></div>
+      <div class="tile"><div class="k">unseen states met in 500 test fights</div><div class="v" id="unseen">–</div></div>
+      <div class="tile"><div class="k">greedy win rate</div><div class="v" id="wr">–</div></div>
+    </div>
+    <table>
+      <tr><th>what the agent sees</th><th>rough number of distinct observations</th></tr>
+      <tr><td>mini fight, every number</td><td>about 10<sup>5</sup> reachable</td></tr>
+      <tr><td>SpireZero, one Act 1 fight: hand of 5 from a 15-card deck, HP, block, energy, 2 enemies with HP and 2 powers each, intents</td><td>more than 10<sup>15</sup></td></tr>
+      <tr><td>SpireZero, the 972-byte observation as raw bytes</td><td>256<sup>972</sup> ≈ 10<sup>2341</sup> (mostly unreachable, but no table can even index it)</td></tr>
+    </table>
+  </div>
+  <p>Even in the toy, the exact table has rows it saw once or twice. Their Q values are noise. In the real game <i>every</i> row would be seen at most once. A table-based learner there would be the random agent with extra steps.</p>
+
+  <div class="toy">
+    <div class="kicker">Toy · a table versus a tiny net, on the value landscape</div>
+    <p>Recall day 5's map of V(your HP, Worm HP). Suppose you only got to <i>sample</i> it: a handful of random cells, each estimated from just 12 noisy rollouts. Left: what a table knows (those cells, nothing else). Right: a tiny two-layer net with 2 inputs and 353 parameters, fitted to the same samples, asked about every cell.</p>
+    <div class="row">
+      <label>samples <input type="range" id="ns" min="10" max="200" step="10" value="40"> <span class="val" id="nsV">40</span></label>
+      <button class="primary" id="fit">Sample and fit</button>
+      <span class="muted" id="fitNote"></span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><div class="muted">table: sampled cells only</div><canvas id="tab" height="200"></canvas></div>
+      <div><div class="muted">net: prediction for every cell</div><canvas id="net" height="200"></canvas></div>
+    </div>
+    <div class="muted">reference (day 5, 150 rollouts per cell):</div>
+    <canvas id="ref" height="200"></canvas>
+  </div>
+  <p>With 40 samples the table is mostly holes; the net already shows the cliff at low HP. With 200 the net is close to the reference map and smoother than the noisy samples it learned from. It isn't magic: the net can only interpolate shapes its inputs make easy to express. Give it HP and Worm HP as two numbers and "low HP is bad" is a simple function. Give it the same information as 972 raw bytes and it needs more capacity, more data and a sensible input encoding, which is why day 10 spends time on featurising the observation.</p>
+
+  <h2>What a network is, in one paragraph</h2>
+  <p>A layer takes a vector, multiplies it by a matrix of parameters, adds a vector of parameters, and squashes each number through a simple nonlinear function. Stack a few layers and you get a function that can bend to fit almost any shape. Training is: measure how wrong the output is (the <b>loss</b>), compute which direction each parameter should move to reduce it (the <b>gradient</b>, by backpropagation, which is just the chain rule applied efficiently), and move each parameter a small step that way (<b>gradient descent</b>). Repeat a million times. Libraries like torch do the gradient part for you; what you choose is the shape of the net, the loss, and the data.</p>
+  <p>For RL the two nets you will meet are the <b>policy</b> (observation in, action probabilities out) and the <b>value</b> or <b>critic</b> (observation in, V(s) out). Day 9 is about how to train the first one when there is no "correct answer" to compare against, only rewards.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li>Card, relic, power and monster kinds are small integer ids from <span class="path"><code>crates/sts2-rl/vocab/</code></span>. In a net those become <b>embeddings</b>: a learned vector per id, so "Strike" and "Twin Strike" can end up near each other. Append-only ids (see <span class="path"><code>crates/sts2-rl/src/vocab.rs</code></span>) are what keeps a trained embedding table valid across engine builds.</li>
+      <li>The observation is written in the engine as integers and featurised in Python. <span class="path"><code>python/sts2/env.py</code></span> exposes the raw bytes as a <code>uint8</code> Box space; the net's input layer is where the bytes become HP fractions, embeddings and so on.</li>
+      <li>There is no network code in the repo yet. That is deliberate: the engine and env are the hard, finished part; the model is a Python experiment that can change weekly.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>A two-layer network with parameters θ = (W<sub>1</sub>, b<sub>1</sub>, W<sub>2</sub>, b<sub>2</sub>):</p>
+      <div class="formula">f<sub>θ</sub>(x) = W<sub>2</sub> · tanh(W<sub>1</sub> x + b<sub>1</sub>) + b<sub>2</sub></div>
+      <p>Fitting values: minimise the mean squared error over sampled states, L(θ) = mean (f<sub>θ</sub>(s) − G(s))<sup>2</sup>, by θ ← θ − η ∇<sub>θ</sub>L. The toy above does exactly this, with plain gradient descent written out by hand in about 40 lines (see the page source).</p>
+      <p>Deep Q-learning (DQN) plugs f<sub>θ</sub> in for the table and uses the day 6 target, with two stabilisers: a replay buffer of past transitions, and a slowly-updated copy of the net for computing targets. We won't use DQN for SpireZero (policy-gradient methods handle masks and large action spaces more gracefully), but the idea carries over unchanged.</p>
+    </div>
+  </details>
+
+  
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    const F = Fight;
+    const $ = id => document.getElementById(id);
+    // ---- table counting
+    $('count').addEventListener('click', () => {
+      const key = F.FEATURIZERS[$('feat').value];
+      const rand = Course.rng(11);
+      const agent = F.QAgent({ key, alpha: 0.1, eps: 0.1, gamma: 0.99, rand });
+      const visits = new Map();
+      const origKey = agent.key; agent.key = s => { const k = origKey(s); visits.set(k, (visits.get(k) || 0) + 1); return k; };
+      for (let i = 0; i < 5000; i++) agent.episode();
+      agent.key = origKey;
+      let rare = 0; visits.forEach(v => { if (v < 5) rare++; });
+      let unseen = 0, total = 0, wins = 0; const r2 = Course.rng(23);
+      for (let i = 0; i < 500; i++) { const s = F.play((st, m) => { total++; if (!agent.Q.has(origKey(st))) unseen++; return agent.greedy(st, m); }, r2); if (s.won) wins++; }
+      $('rows').textContent = Course.fmtInt(agent.Q.size); $('rare').textContent = Course.fmtInt(rare) + ` (${Course.pct(rare / agent.Q.size)})`;
+      $('unseen').textContent = `${unseen} of ${total} steps (${Course.pct(unseen / total)})`; $('wr').textContent = Course.pct(wins / 500);
+    });
+
+    // ---- tiny MLP on the landscape
+    const hps = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28], ehps = [6, 12, 18, 24, 30, 36, 42, 48];
+    function rollout(hp, ehp, rand, n) {
+      let t = 0;
+      for (let i = 0; i < n; i++) {
+        const s = F.newFight(rand); s.playerHp = hp; s.enemyHp = ehp; s.strikes = 3; s.defends = 2; s.drawS = 2; s.drawD = 3; s.turn = 2; s.intent = 'chomp';
+        while (!s.done && s.steps < 400) F.step(s, F.heuristicPolicy(s, F.legal(s)), rand);
+        t += s.won ? 1 : -1;
+      }
+      return t / n;
+    }
+    let ref = null;
+    function drawRef() {
+      if (!ref) { const rand = Course.rng(3); ref = hps.slice().reverse().map(hp => ehps.map(ehp => rollout(hp, ehp, rand, 150))); }
+      Course.heatmap($('ref'), ref, { min: -1, max: 1, rows: hps.slice().reverse().map(h => 'HP ' + h), cols: ehps.map(e => 'W' + e), cell: 22, labelWidth: 50 });
+    }
+    function MLP(nin, nh) {
+      const r = Course.rng(5), rn = () => (r() * 2 - 1) * 0.8;
+      const m = { W1: [], b1: new Array(nh).fill(0), W2: [], b2: new Array(nh).fill(0), W3: new Array(nh).fill(0).map(rn), b3: 0 };
+      for (let i = 0; i < nh; i++) { m.W1.push(new Array(nin).fill(0).map(rn)); m.W2.push(new Array(nh).fill(0).map(rn)); }
+      return m;
+    }
+    function forward(m, x) {
+      const h1 = m.b1.map((b, i) => Math.tanh(b + m.W1[i].reduce((a, w, j) => a + w * x[j], 0)));
+      const h2 = m.b2.map((b, i) => Math.tanh(b + m.W2[i].reduce((a, w, j) => a + w * h1[j], 0)));
+      const y = m.b3 + m.W3.reduce((a, w, i) => a + w * h2[i], 0);
+      return { h1, h2, y };
+    }
+    function trainStep(m, data, lr) {
+      // one full-batch gradient step on mean squared error
+      const nh = m.b1.length, nin = m.W1[0].length;
+      const gW1 = m.W1.map(r => r.map(() => 0)), gb1 = new Array(nh).fill(0), gW2 = m.W2.map(r => r.map(() => 0)), gb2 = new Array(nh).fill(0), gW3 = new Array(nh).fill(0); let gb3 = 0, loss = 0;
+      for (const [x, t] of data) {
+        const { h1, h2, y } = forward(m, x);
+        const dy = 2 * (y - t) / data.length; loss += (y - t) * (y - t) / data.length;
+        gb3 += dy;
+        const dh2 = new Array(nh).fill(0);
+        for (let i = 0; i < nh; i++) { gW3[i] += dy * h2[i]; dh2[i] = dy * m.W3[i] * (1 - h2[i] * h2[i]); }
+        const dh1 = new Array(nh).fill(0);
+        for (let i = 0; i < nh; i++) { gb2[i] += dh2[i]; for (let j = 0; j < nh; j++) { gW2[i][j] += dh2[i] * h1[j]; dh1[j] += dh2[i] * m.W2[i][j]; } }
+        for (let j = 0; j < nh; j++) { const d = dh1[j] * (1 - h1[j] * h1[j]); gb1[j] += d; for (let k = 0; k < nin; k++) gW1[j][k] += d * x[k]; }
+      }
+      for (let i = 0; i < nh; i++) { m.b1[i] -= lr * gb1[i]; m.b2[i] -= lr * gb2[i]; m.W3[i] -= lr * gW3[i]; for (let k = 0; k < nin; k++) m.W1[i][k] -= lr * gW1[i][k]; for (let j = 0; j < nh; j++) m.W2[i][j] -= lr * gW2[i][j]; }
+      m.b3 -= lr * gb3;
+      return loss;
+    }
+    const norm = (hp, ehp) => [hp / 14 - 1, ehp / 24 - 1];
+    $('ns').addEventListener('input', e => $('nsV').textContent = e.target.value);
+    $('fit').addEventListener('click', () => {
+      $('fitNote').textContent = 'fitting…';
+      setTimeout(() => {
+        const n = +$('ns').value, rand = Course.rng(Date.now() & 0xffff);
+        const tab = hps.slice().reverse().map(() => ehps.map(() => null));
+        const data = [];
+        for (let i = 0; i < n; i++) {
+          const hi = Math.floor(rand() * hps.length), ei = Math.floor(rand() * ehps.length);
+          const v = rollout(hps[hi], ehps[ei], rand, 12);
+          tab[hps.length - 1 - hi][ei] = v; data.push([norm(hps[hi], ehps[ei]), v]);
+        }
+        const m = MLP(2, 16); let loss = 0;
+        for (let it = 0; it < 1500; it++) loss = trainStep(m, data, 0.05);
+        const pred = hps.slice().reverse().map(hp => ehps.map(ehp => Math.max(-1, Math.min(1, forward(m, norm(hp, ehp)).y))));
+        const o = { min: -1, max: 1, rows: hps.slice().reverse().map(h => 'HP ' + h), cols: ehps.map(e => 'W' + e), cell: 22, labelWidth: 50 };
+        Course.heatmap($('tab'), tab, o); Course.heatmap($('net'), pred, o); drawRef();
+        $('fitNote').textContent = `${n} samples · net fit loss ${loss.toFixed(3)} · 353 parameters`;
+      }, 10);
+    });
+    drawRef();
+
+    Course.quiz('#quiz', [
+      { q: 'What can a table never do that a neural net can?', choices: ['Store exact values', 'Say something sensible about a state it has never visited', 'Learn from rewards'], answer: 1, why: 'Generalization is the whole reason to accept the net\'s approximation error.', hint: 'Think about the empty cells in the table heat map.' },
+      { q: 'The net fitted from 40 noisy samples is smoother than the samples themselves. Is that good or bad?', choices: ['Good here: the true landscape is smooth, so the net averaged out rollout noise', 'Bad: the net should reproduce every sample exactly', 'Neither: smoothness is unrelated to accuracy'], answer: 0, why: 'A limited-capacity net cannot memorise noise, so it is pushed toward the simpler underlying shape. When the true function is jagged this same bias hurts; the right encoding and capacity are what you tune.', hint: 'Compare the net to the reference map, not to the samples.' },
+      { q: 'Why does SpireZero store card kinds as small integer ids rather than one-hot vectors or names?', choices: ['Integers compress better on disk', 'So the net can learn an embedding per id, and the ids stay stable as the engine grows', 'Because Rust has no strings'], answer: 1, why: 'An embedding table indexed by a stable id is the standard way to let a net generalize across similar cards. The append-only vocab files guarantee the ids never shift.', hint: 'Look at the first repo bullet.' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

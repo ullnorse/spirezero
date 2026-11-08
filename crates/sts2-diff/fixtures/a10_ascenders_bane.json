@@ -1,0 +1,210 @@
+{
+  "seed": "D1S0",
+  "divergence": {
+    "step": 0,
+    "path": "state.rng.run.Shuffle",
+    "rust": 9,
+    "referee": 10
+  },
+  "actions": {
+    "character": "Necrobinder",
+    "ascension": 10,
+    "encounter": "FUZZY_WURM_CRAWLER_WEAK",
+    "actions": []
+  },
+  "referee_trace": [
+    {
+      "step": 0,
+      "action": {
+        "action": "start",
+        "seed": "D1S0",
+        "character": "Necrobinder",
+        "ascension": 10,
+        "encounter": "FUZZY_WURM_CRAWLER_WEAK"
+      },
+      "decision": "combat_play",
+      "state": {
+        "type": "state",
+        "seed": "D1S0",
+        "act": "OVERGROWTH",
+        "floor": 1,
+        "first_encounters": [
+          "NIBBITS_WEAK",
+          "FUZZY_WURM_CRAWLER_WEAK",
+          "SLIMES_WEAK"
+        ],
+        "rng": {
+          "run": {
+            "UpFront": 416,
+            "Shuffle": 10,
+            "UnknownMapPoint": 0,
+            "CombatCardGeneration": 0,
+            "CombatPotionGeneration": 0,
+            "CombatCardSelection": 0,
+            "CombatEnergyCosts": 0,
+            "CombatTargets": 0,
+            "MonsterAi": 0,
+            "Niche": 1,
+            "CombatOrbs": 0,
+            "TreasureRoomRelics": 0
+          },
+          "player": {
+            "Rewards": 0,
+            "Shops": 0,
+            "Transformations": 0
+          }
+        },
+        "combat_over": false,
+        "player_dead": false,
+        "round": 1,
+        "side": "Player",
+        "player": {
+          "hp": 52,
+          "max_hp": 66,
+          "block": 0,
+          "energy": 3,
+          "stars": 0,
+          "gold": 99,
+          "powers": [],
+          "potions": [
+            null,
+            null
+          ]
+        },
+        "osty": {
+          "alive": true,
+          "hp": 1,
+          "max_hp": 1,
+          "block": 0,
+          "powers": [
+            {
+              "id": "DIE_FOR_YOU_POWER",
+              "amount": 1
+            }
+          ]
+        },
+        "hand": [
+          {
+            "id": "DEFEND_NECROBINDER",
+            "upgrade": 0,
+            "cost": 1,
+            "keywords": [],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          },
+          {
+            "id": "STRIKE_NECROBINDER",
+            "upgrade": 0,
+            "cost": 1,
+            "keywords": [],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          },
+          {
+            "id": "STRIKE_NECROBINDER",
+            "upgrade": 0,
+            "cost": 1,
+            "keywords": [],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          },
+          {
+            "id": "UNLEASH",
+            "upgrade": 0,
+            "cost": 1,
+            "keywords": [],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          },
+          {
+            "id": "DEFEND_NECROBINDER",
+            "upgrade": 0,
+            "cost": 1,
+            "keywords": [],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          }
+        ],
+        "draw": [
+          {
+            "id": "BODYGUARD",
+            "upgrade": 0,
+            "cost": 1,
+            "keywords": [],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          },
+          {
+            "id": "DEFEND_NECROBINDER",
+            "upgrade": 0,
+            "cost": 1,
+            "keywords": [],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          },
+          {
+            "id": "ASCENDERS_BANE",
+            "upgrade": 0,
+            "cost": 0,
+            "keywords": [
+              "Eternal",
+              "Ethereal",
+              "Unplayable"
+            ],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          },
+          {
+            "id": "DEFEND_NECROBINDER",
+            "upgrade": 0,
+            "cost": 1,
+            "keywords": [],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          },
+          {
+            "id": "STRIKE_NECROBINDER",
+            "upgrade": 0,
+            "cost": 1,
+            "keywords": [],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          },
+          {
+            "id": "STRIKE_NECROBINDER",
+            "upgrade": 0,
+            "cost": 1,
+            "keywords": [],
+            "exhaust_on_next_play": false,
+            "retain": false,
+            "sly": false
+          }
+        ],
+        "discard": [],
+        "exhaust": [],
+        "play": [],
+        "enemies": [
+          {
+            "id": "FUZZY_WURM_CRAWLER",
+            "alive": true,
+            "hp": 59,
+            "max_hp": 59,
+            "block": 0,
+            "next_move": "FIRST_ACID_GOOP",
+            "powers": []
+          }
+        ]
+      }
+    }
+  ]
+}

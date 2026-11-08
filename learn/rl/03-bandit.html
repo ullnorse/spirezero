@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trial and error</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="03-bandit">
+<main>
+  <div class="kicker">Week 1 · Day 4</div>
+  <h1>Trial and error: which opening is best?</h1>
+  <p class="lead">Strip the problem down to one decision. Turn 1, the Worm is going to Chomp for 12. Do you go all in on Strikes, or block first? Nobody will tell you. You can only try openings and count wins.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>A <b>bandit</b> is the simplest RL problem: a few arms, each paying off with some unknown probability, and you choose which to pull. No states, no sequences, only the trade-off at the heart of all of RL:</p>
+    <ul>
+      <li><b>Exploit:</b> pull the arm that looks best so far, to collect reward now.</li>
+      <li><b>Explore:</b> pull something else, to find out whether it is actually better.</li>
+    </ul>
+    <p>Exploit only, and you can lock onto a mediocre arm forever because you never gave the good one a fair sample. Explore only, and you are the random agent from day 1. Every learning algorithm later in this course is some way of balancing these.</p>
+  </div>
+
+  <div class="toy">
+    <div class="kicker">Toy · four openings</div>
+    <p>Each arm is a turn-1 script; after turn 1 the fight is finished by the same hand-written rule for every arm, so only the opening differs. Pull by hand first. Then let an ε-greedy agent pull for you and watch the estimates settle.</p>
+    <div class="row" id="arms"></div>
+    <canvas id="bars" height="120"></canvas>
+    <div class="row">
+      <label>ε (chance to explore) <input type="range" id="eps" min="0" max="0.5" step="0.01" value="0.1"> <span class="val" id="epsV">0.10</span></label>
+      <label><input type="checkbox" id="optimistic"> start optimistic (every arm begins at 100%)</label>
+      <button class="primary" id="auto">Auto-pull 2,000</button>
+      <button id="reset">Reset</button>
+      <label><input type="checkbox" id="reveal"> reveal true win rates</label>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">pulls</div><div class="v" id="pulls">0</div></div>
+      <div class="tile"><div class="k">wins</div><div class="v" id="wins">0</div></div>
+      <div class="tile"><div class="k">regret</div><div class="v" id="regret">0.0</div></div>
+      <div class="tile"><div class="k">current favourite</div><div class="v" id="fav">–</div></div>
+    </div>
+    <canvas id="regretChart" height="180"></canvas>
+  </div>
+
+  <p>Things to try:</p>
+  <ul>
+    <li><b>ε = 0.</b> Pure greedy. Reset, auto-pull. It usually locks onto whichever arm got lucky in its first few pulls. Run it several times; it does not always find the best arm.</li>
+    <li><b>ε = 0 with optimistic starts.</b> Every arm starts at 100%, so each one disappoints in turn until the truly best arm is the only one left standing. Exploration without randomness.</li>
+    <li><b>ε = 0.3.</b> It finds the best arm fast, then keeps wasting 30% of its pulls on worse ones. The regret line never flattens.</li>
+  </ul>
+  <p><b>Regret</b> is the honest score for exploration: how much reward you gave up compared with always pulling the best arm. It is the quantity that trades off against knowledge.</p>
+
+  <h2>From one decision to many</h2>
+  <p>A fight is not one decision but a chain of them, and the outcome of an early choice only shows up several turns later. The bandit's lesson still holds at every step, but we need one more idea before we can learn the chain: a way to say how good a <i>situation</i> is, not just an action. That is day 5.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>crates/sts2-rl/src/start.rs</code></span>: the <b>start corpus</b>. Each record is a fight's starting position (deck, relics, HP, encounter, RNG streams). The env resets from these, so "which opening is best for this start" is the real version of this toy.</li>
+      <li><span class="path"><code>python/sts2/policy.py</code></span>: the uniform random policy is the "ε = 1" corner of this trade-off.</li>
+      <li>In PPO (day 9) exploration is not an ε at all: the policy is a probability distribution and an <b>entropy bonus</b> keeps it from collapsing too early. Same trade-off, different knob.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>Each arm <i>a</i> has an unknown mean reward <i>q*(a)</i>. Our estimate after <i>n</i> pulls of that arm is the sample mean, which you can update one pull at a time without storing the history:</p>
+      <div class="formula">Q<sub>n+1</sub>(a) = Q<sub>n</sub>(a) + (1 / n) · (r − Q<sub>n</sub>(a))</div>
+      <p>Read it as "move the estimate a little toward what you just saw". Replace <i>1/n</i> with a constant α and you get a <b>learning rate</b>, which forgets old data gradually. That exact form, estimate += α · (target − estimate), is Q-learning's update in day 6.</p>
+      <p>ε-greedy: with probability ε pick a uniformly random arm, else pick argmax<sub>a</sub> Q(a). Regret after <i>T</i> pulls is Σ<sub>t</sub> (q*(best) − q*(a<sub>t</sub>)).</p>
+    </div>
+  </details>
+
+  
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    const F = Fight;
+    // turn-1 scripts, then the heuristic
+    function scripted(seq) {
+      return (s, m) => {
+        if (s.turn === 1) { for (const a of seq) { if (a === 'S' && m[F.STRIKE]) return F.STRIKE; if (a === 'D' && m[F.DEFEND]) return F.DEFEND; } return F.END; }
+        return F.heuristicPolicy(s, m);
+      };
+    }
+    // scripts: a priority list over what to play while energy lasts
+    const ARMS = [
+      { name: 'All-in: Strikes, then Defends', pol: scripted(['S', 'S', 'S', 'D', 'D', 'D']) },
+      { name: 'One Defend, then Strikes', pol: (s, m) => { if (s.turn === 1) { if (s.energy === 3 && m[F.DEFEND]) return F.DEFEND; if (m[F.STRIKE]) return F.STRIKE; if (m[F.DEFEND]) return F.DEFEND; return F.END; } return F.heuristicPolicy(s, m); } },
+      { name: 'Two Defends, then Strikes', pol: (s, m) => { if (s.turn === 1) { if (s.energy >= 2 && m[F.DEFEND]) return F.DEFEND; if (m[F.STRIKE]) return F.STRIKE; if (m[F.DEFEND]) return F.DEFEND; return F.END; } return F.heuristicPolicy(s, m); } },
+      { name: 'Full block: Defends first', pol: scripted(['D', 'D', 'D', 'S', 'S', 'S']) },
+    ];
+    // true means, for regret (hidden unless revealed)
+    const truth = ARMS.map(a => F.evaluate(a.pol, 6000, 99).winRate);
+    const best = Math.max(...truth);
+    let rand = Course.rng(Date.now() & 0xffff);
+    let n, w, pulls, wins, regret, regretCurve, loop;
+    function reset() { n = [0, 0, 0, 0]; w = [0, 0, 0, 0]; pulls = 0; wins = 0; regret = 0; regretCurve = [[0, 0]]; if (loop) loop.stop(); draw(); }
+    function est(i) { const opt = document.getElementById('optimistic').checked; return n[i] ? w[i] / n[i] : (opt ? 1 : 0); }
+    function pull(i) {
+      const f = F.play(ARMS[i].pol, rand); n[i]++; pulls++; if (f.won) { w[i]++; wins++; }
+      regret += best - truth[i]; if (pulls % 10 === 0) regretCurve.push([pulls, regret]);
+    }
+    function pickEps() {
+      const eps = +document.getElementById('eps').value;
+      if (rand() < eps) return Math.floor(rand() * 4);
+      let bi = 0, bv = -1; for (let i = 0; i < 4; i++) { const v = est(i) + rand() * 1e-6; if (v > bv) { bv = v; bi = i; } } return bi;
+    }
+    function draw() {
+      const reveal = document.getElementById('reveal').checked;
+      const vals = ARMS.map((_, i) => est(i));
+      Course.bars(document.getElementById('bars'), vals, ARMS.map((a, i) => `${a.name} (${n[i]})`), { max: 1, labelWidth: 230, fmt: (v) => Course.pct(v), rowH: 28 });
+      if (reveal) {
+        const c = document.getElementById('bars').getContext('2d'); c.font = '12px system-ui'; c.fillStyle = Course.color('--c6'); c.textAlign = 'left';
+        const w0 = document.getElementById('bars').clientWidth; const span = w0 - 230 - 60;
+        truth.forEach((t, i) => { const x = 230 + t * span; c.fillRect(x - 1, 5 + i * 28 + 2, 2, 24); c.fillText(`true ${Course.pct(t)}`, Math.min(x + 6, w0 - 80), 5 + i * 28 + 28 / 2 - 9); });
+      }
+      document.getElementById('pulls').textContent = pulls; document.getElementById('wins').textContent = wins;
+      document.getElementById('regret').textContent = regret.toFixed(1);
+      let bi = 0; for (let i = 1; i < 4; i++) if (est(i) > est(bi)) bi = i;
+      document.getElementById('fav').textContent = pulls ? `arm ${bi + 1}` : '–';
+      Course.lineChart(document.getElementById('regretChart'), [{ name: 'cumulative regret (fights given up vs the best arm)', data: regretCurve }], { ymin: 0, xlabel: 'pulls' });
+    }
+    const armsEl = document.getElementById('arms');
+    ARMS.forEach((a, i) => armsEl.appendChild(Course.el('button', { onclick: () => { pull(i); draw(); } }, [`Pull ${i + 1}: ${a.name}`])));
+    document.getElementById('eps').addEventListener('input', e => document.getElementById('epsV').textContent = (+e.target.value).toFixed(2));
+    document.getElementById('optimistic').addEventListener('change', draw);
+    document.getElementById('reveal').addEventListener('change', draw);
+    document.getElementById('reset').addEventListener('click', reset);
+    document.getElementById('auto').addEventListener('click', () => {
+      if (loop && loop.running) loop.stop();
+      const target = pulls + 2000;
+      loop = Course.runLoop(() => { for (let k = 0; k < 20 && pulls < target; k++) pull(pickEps()); draw(); return pulls < target; }, 10);
+    });
+    reset();
+    window.addEventListener('themechange', draw);
+
+    Course.quiz('#quiz', [
+      { q: 'With ε = 0 and no optimism, the agent sometimes settles on a worse arm forever. Why?', choices: ['The random number generator is biased', 'An arm that loses its first pull or two looks bad and is never tried again', 'Greedy agents cannot count wins'], answer: 1, why: 'A greedy agent trusts early estimates. Without any exploration a good arm that started unlucky never gets another chance.', hint: 'What happens to an arm whose estimate is 0 after one unlucky pull?' },
+      { q: 'What does "regret" measure?', choices: ['How many fights the agent lost', 'How much reward was given up compared with always pulling the best arm', 'How often the agent explored'], answer: 1, why: 'Regret is the price of not knowing. Even a win on a worse arm costs regret, because the best arm would have won more often on average.', hint: 'It is a comparison against a benchmark you cannot see.' },
+      { q: 'Optimistic initial values cause exploration without randomness because…', choices: ['every arm disappoints relative to 100%, so the agent cycles through them until the real best one stands out', 'they make the agent pull arms in order', 'they add noise to the rewards'], answer: 0, why: 'Each pull drags that arm\'s estimate down toward reality, making the untried arms look best. The result is systematic, not random, exploration.', hint: 'Start every estimate at 100% and think about what happens after one loss.' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

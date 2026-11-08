@@ -1,0 +1,19 @@
+[package]
+name = "sts2-diff"
+description = "Differential test harness: the Rust engine against the real-game referee."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sts2-core = { path = "../sts2-core" }
+sts2-rl = { path = "../sts2-rl" }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+sts2-core = { path = "../sts2-core", features = ["testing"] }

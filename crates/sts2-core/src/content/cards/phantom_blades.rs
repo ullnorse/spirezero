@@ -1,0 +1,58 @@
+//! `PhantomBlades` (`Models.Cards/PhantomBlades.cs`): cost 1, Power, Uncommon; applies
+//! `PhantomBladesPower` (9 damage, 12 upgraded).
+
+use crate::combat::hooks::Hooks;
+use crate::combat::{CardId, CardPlay, Engine, Flow};
+use crate::content::cards::{CardModel, CardRarity, CardType, CardVar, TargetType, Var};
+use crate::content::powers::PowerKind;
+use crate::decimal::Decimal;
+
+pub struct PhantomBlades;
+
+#[sts2_macros::hooks]
+impl Hooks for PhantomBlades {
+    type Me = CardId;
+}
+
+impl CardModel for PhantomBlades {
+    fn name(&self) -> &'static str {
+        "Phantom Blades"
+    }
+
+    fn cost(&self) -> i32 {
+        1
+    }
+
+    fn card_type(&self) -> CardType {
+        CardType::Power
+    }
+
+    fn rarity(&self) -> CardRarity {
+        CardRarity::Uncommon
+    }
+
+    fn target(&self) -> TargetType {
+        TargetType::Myself
+    }
+
+    fn vars(&self) -> &'static [CardVar] {
+        const VARS: &[CardVar] =
+            &[CardVar::new(Var::Power(PowerKind::PhantomBlades), 9).upgrade(3)];
+        VARS
+    }
+
+    fn on_play(&self, eng: &mut Engine<'_>, play: &CardPlay) -> Flow {
+        let amount = eng
+            .s
+            .card(play.card)
+            .int_var(Var::Power(PowerKind::PhantomBlades));
+        let player = eng.s.player.creature;
+        eng.apply_power_from_card(
+            Some(play.card),
+            player,
+            PowerKind::PhantomBlades,
+            Decimal::from(amount),
+            Some(player),
+        )
+    }
+}

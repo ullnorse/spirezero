@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How good is this situation?</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="04-value">
+<main>
+  <div class="kicker">Week 1 · Day 5</div>
+  <h1>Value: how good is this situation?</h1>
+  <p class="lead">You already have this instinct. Twelve HP, the Worm at 20 with Strength up, two Defends in hand: "this is bad". RL makes that feeling a number, and the number turns out to be the key to learning long chains of decisions.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>The <b>value</b> of a state is the reward you expect to collect from here to the end of the fight, <i>if you keep playing the way you play</i>. With our +1/−1 reward, value is just (win probability − loss probability). Two things to hold onto:</p>
+    <ul>
+      <li>Value depends on the <b>policy</b>. The same state is worth more to a good player than to a random one.</li>
+      <li>Value can be <b>estimated by playing it out</b>. Start from the state, finish the fight many times, average the results. That is a Monte Carlo estimate and it is exactly what you do when you say "I'd win this about 7 times in 10".</li>
+    </ul>
+    <p>The value of an <b>action</b> in a state (written Q) is the same thing with the first move fixed: take this action, then play on as usual. Once you have Q for every legal action, the best move is simply the biggest one.</p>
+  </div>
+
+  <div class="toy">
+    <div class="kicker">Toy · value by rolling out</div>
+    <p>Set up a situation. Pick who finishes the fight. Roll it out and watch the estimate converge. Then switch the policy and see the value of the <i>same</i> state change.</p>
+    <div class="row">
+      <label>your HP <input type="range" id="php" min="1" max="28" value="16"> <span class="val" id="phpV">16</span></label>
+      <label>Worm HP <input type="range" id="ehp" min="1" max="48" value="30"> <span class="val" id="ehpV">30</span></label>
+      <label>Worm Strength <input type="range" id="str" min="0" max="12" step="4" value="0"> <span class="val" id="strV">0</span></label>
+      <label>intent <select id="intent"><option value="chomp">Chomp</option><option value="thrash">Thrash</option><option value="bellow">Bellow</option></select></label>
+      <label>hand <select id="hand"><option value="3,2">3 Strike 2 Defend</option><option value="5,0">5 Strike</option><option value="1,4">1 Strike 4 Defend</option><option value="2,3">2 Strike 3 Defend</option></select></label>
+    </div>
+    <div class="row">
+      <label>finish the fight with <select id="pol"><option value="heuristic">hand-written rule</option><option value="turtle">turtle (block whenever hit)</option><option value="berserk">berserk (never block)</option><option value="randomCard">random over cards</option></select></label>
+      <button class="primary" id="roll">Roll out 2,000 fights</button>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">rollouts</div><div class="v" id="n">0</div></div>
+      <div class="tile"><div class="k">win rate</div><div class="v" id="wr">–</div></div>
+      <div class="tile"><div class="k">value V(s)</div><div class="v" id="v">–</div></div>
+    </div>
+    <canvas id="conv" height="180"></canvas>
+    <h3>Value per action from this state, Q(s, a)</h3>
+    <p class="muted">Each bar: take that action first, then let the chosen policy finish. 1,500 rollouts per action.</p>
+    <canvas id="qbars" height="100"></canvas>
+    <div id="advice" class="muted"></div>
+  </div>
+
+  <p>Try: HP 12, Worm 20, Strength 8, intent Chomp, 3 Strike 2 Defend. The rule-based player's own first move is to block, but look at the Q bars: is that what the rollouts say is best? When Q disagrees with the policy that produced it, you have found an improvement. <b>Act greedily on Q, and the policy gets better.</b> Do that over and over and you have, in outline, most of classical RL.</p>
+
+  <div class="toy">
+    <div class="kicker">Toy · the value landscape</div>
+    <p>V(s) under the hand-written rule for every combination of your HP and the Worm's HP (Chomp incoming, no Strength, 3 Strike 2 Defend). Each cell is 150 rollouts. Warm is good.</p>
+    <div class="row"><button class="primary" id="land">Compute the landscape</button><span class="muted" id="landNote"></span></div>
+    <canvas id="heat" height="200"></canvas>
+  </div>
+  <p>Look at the shape rather than individual cells. The cliff along the bottom (low HP) is sharper than the slope along the right (high Worm HP): with this deck, dying this turn is the thing to avoid, and a long fight is survivable. A learned value function is a map like this, over a state space far too large to draw.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li>Rollouts need a <b>copy</b> of the state to play forward from. The engine's <code>Combat::clone_from</code> and the no-allocation copy test (<span class="path"><code>crates/sts2-core/tests/it/copy_alloc.rs</code></span>) exist so search and rollouts are cheap; <span class="path"><code>docs/perf.md</code></span> section S4A′ is about exactly that.</li>
+      <li><code>cargo xtask bench --mode fights --lookahead</code>: the "LA" workload is a one-step lookahead player, a tiny ancestor of the Q bars above, run as a speed benchmark.</li>
+      <li>In PPO (day 9) a neural net predicts V(s) from the observation; it is called the <b>critic</b>, and it plays the role of the rollouts here without having to run them.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>The state-value function of a policy π:</p>
+      <div class="formula">V<sup>π</sup>(s) = E[ G<sub>t</sub> | s<sub>t</sub> = s, actions from π ]</div>
+      <p>and the action-value function:</p>
+      <div class="formula">Q<sup>π</sup>(s, a) = E[ G<sub>t</sub> | s<sub>t</sub> = s, a<sub>t</sub> = a, then π ]</div>
+      <p>The Monte Carlo estimate is the sample mean of returns over rollouts. The one relationship that everything else builds on is the <b>Bellman equation</b>: the value of now equals the reward now plus the value of what comes next,</p>
+      <div class="formula">V<sup>π</sup>(s) = E[ r + γ · V<sup>π</sup>(s′) ]</div>
+      <p>γ (gamma) is a discount in [0, 1] that makes far-off reward count a little less. It keeps infinite sums finite and nudges the agent to win sooner; our fights end, so γ close to 1 is fine. Day 6 turns this equation into a learning rule.</p>
+    </div>
+  </details>
+
+  
+  <script src="fight.js"></script>
+  <script>
+    Course.init();
+    const F = Fight;
+    const POL = { heuristic: F.heuristicPolicy, turtle: F.turtlePolicy, berserk: F.berserkPolicy, randomCard: F.randomCardPolicy };
+    ['php', 'ehp', 'str'].forEach(k => document.getElementById(k).addEventListener('input', e => document.getElementById(k + 'V').textContent = e.target.value));
+    function setup() {
+      const s = F.newFight(Course.rng(1));
+      s.playerHp = +document.getElementById('php').value; s.enemyHp = +document.getElementById('ehp').value; s.str = +document.getElementById('str').value;
+      s.intent = document.getElementById('intent').value; s.lastIntent = null;
+      const [a, b] = document.getElementById('hand').value.split(',').map(Number);
+      s.strikes = a; s.defends = b; s.drawS = F.CFG.strikes - a; s.drawD = F.CFG.defends - b; s.discS = 0; s.discD = 0;
+      s.block = 0; s.enemyBlock = 0; s.energy = 3; s.turn = 2;
+      return s;
+    }
+    function rollout(s0, pol, rand, firstAction) {
+      const s = F.clone(s0);
+      if (firstAction != null) { if (!F.legal(s)[firstAction]) return null; F.step(s, firstAction, rand); }
+      while (!s.done && s.steps < 400) F.step(s, pol(s, F.legal(s), rand), rand);
+      return s.won ? 1 : -1;
+    }
+    let loop;
+    document.getElementById('roll').addEventListener('click', () => {
+      if (loop && loop.running) loop.stop();
+      const s0 = setup(), pol = POL[document.getElementById('pol').value], rand = Course.rng(Date.now() & 0xffff);
+      let n = 0, sum = 0, wins = 0; const curve = [];
+      loop = Course.runLoop(() => {
+        for (let i = 0; i < 40 && n < 2000; i++) { const g = rollout(s0, pol, rand); n++; sum += g; if (g > 0) wins++; if (n % 20 === 0 || n < 20) curve.push([n, sum / n]); }
+        document.getElementById('n').textContent = n; document.getElementById('wr').textContent = Course.pct(wins / n); document.getElementById('v').textContent = (sum / n).toFixed(3);
+        Course.lineChart(document.getElementById('conv'), [{ name: 'running estimate of V(s)', data: curve }], { ymin: -1, ymax: 1, xlabel: 'rollouts', hlines: [{ y: 0, color: '--fg3' }] });
+        if (n >= 2000) {
+          const qs = [0, 1, 2].map(a => { let t = 0, k = 0; for (let i = 0; i < 1500; i++) { const g = rollout(s0, pol, rand, a); if (g == null) return null; t += g; k++; } return t / k; });
+          Course.bars(document.getElementById('qbars'), qs.map(q => q == null ? 0 : q), F.ACTIONS.map((a, i) => qs[i] == null ? a + ' (illegal)' : a), { signed: true, max: 1, fmt: v => v.toFixed(3), colors: qs.map(q => q == null ? '--line' : q >= 0 ? '--good' : '--bad') });
+          let bi = -1; qs.forEach((q, i) => { if (q != null && (bi < 0 || q > qs[bi])) bi = i; });
+          const own = pol(s0, F.legal(s0), Course.rng(5));
+          document.getElementById('advice').textContent = `Greedy on Q says: ${F.ACTIONS[bi]}. The policy's own first move here: ${F.ACTIONS[own]}.` + (own !== bi ? ' They disagree, so acting on Q would improve this policy in this state.' : ' They agree.');
+          return false;
+        }
+        return true;
+      }, 12);
+    });
+    document.getElementById('land').addEventListener('click', () => {
+      const note = document.getElementById('landNote'); note.textContent = 'computing…';
+      setTimeout(() => {
+        const hps = [4, 8, 12, 16, 20, 24, 28], ehps = [6, 12, 18, 24, 30, 36, 42, 48];
+        const rand = Course.rng(3);
+        const grid = hps.slice().reverse().map(hp => ehps.map(ehp => {
+          const s0 = F.newFight(rand); s0.playerHp = hp; s0.enemyHp = ehp; s0.strikes = 3; s0.defends = 2; s0.drawS = 2; s0.drawD = 3; s0.turn = 2; s0.intent = 'chomp';
+          let t = 0; for (let i = 0; i < 150; i++) t += rollout(s0, F.heuristicPolicy, rand); return t / 150;
+        }));
+        Course.heatmap(document.getElementById('heat'), grid, { min: -1, max: 1, rows: hps.slice().reverse().map(h => 'HP ' + h), cols: ehps.map(e => 'W' + e), fmt: v => v.toFixed(1), cell: 40, labelWidth: 56 });
+        note.textContent = 'rows: your HP · columns: Worm HP · value from −1 to +1';
+      }, 10);
+    });
+
+    Course.quiz('#quiz', [
+      { q: 'The same state is worth +0.6 under the hand-written rule and −0.3 under berserk. Which is "the" value of the state?', choices: ['+0.6, because it is higher', 'Neither on its own: value is always relative to a policy', '−0.3, because berserk is simpler'], answer: 1, why: 'V is V-under-a-policy. Changing how you play changes what every state is worth. That is also why a learned value function has to keep up with a changing policy.', hint: 'Re-read the first bullet of the idea box.' },
+      { q: 'You have Q(s, a) for every legal action under your current policy. How do you improve the policy?', choices: ['Pick the action with the largest Q in that state', 'Pick a random action to explore', 'Average the Qs and use that as V'], answer: 0, why: 'Acting greedily on your own Q can only do at least as well as the policy that produced Q. Repeating that is policy iteration.', hint: 'What did the "Greedy on Q says" line do?' },
+      { q: 'Why is a Monte Carlo estimate of value expensive in the real game?', choices: ['It needs the draw pile order', 'Each estimate needs many complete fights from that state, and there are astronomically many states', 'Rewards are floats'], answer: 1, why: 'Rolling out works beautifully for one state in a toy. For every state a net might see, you need something that generalizes. Days 6 and 8.', hint: 'How many rollouts did one cell of the landscape take? How many cells does the real game have?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>

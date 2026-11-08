@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>An evaluation protocol</title>
+<link rel="stylesheet" href="style.css">
+<script src="common.js"></script>
+</head>
+<body data-lesson="13-eval">
+<main>
+  <div class="kicker">Week 3 · Day 13</div>
+  <h1>An evaluation protocol</h1>
+  <p class="lead">Every number you will compare from now on comes out of one function, decided today and never changed: fixed seed, greedy actions, a fixed number of fights, a standard error next to every rate, a row per encounter. Without it, a "better" run is a run that got luckier starts.</p>
+
+  <div class="box idea">
+    <div class="kicker">The idea</div>
+    <p>A win rate is a measurement with noise. 300 fights at 60% have a standard error of 2.8 points, so two policies at 58% and 62% are indistinguishable at that size. The protocol fixes everything that is not the policy, states the noise, and tells you how many fights a comparison needs before you run it.</p>
+  </div>
+
+  <h2>What is fixed</h2>
+  <table>
+    <tr><th>knob</th><th>fixed to</th><th>why</th></tr>
+    <tr><td>starts</td><td><code>make_envs(n, seed=7)</code>: the same episode order every time</td><td>the start corpus mixes Jaw Worms with elites; a different draw of starts moves the rate by points</td></tr>
+    <tr><td>actions</td><td>argmax of the masked logits</td><td>the training rate includes exploration; greedy is the policy you would ship</td></tr>
+    <tr><td>count</td><td>the first N fights to end; running ones ignored</td><td>"N steps" counts more short fights than long ones, which favours a fast loser</td></tr>
+    <tr><td>net</td><td>a saved checkpoint, <code>eval()</code> mode, no gradients</td><td>the number must be reproducible from the file alone</td></tr>
+  </table>
+  <p>With the seed fixed, the same policy evaluated twice gives the same number to the last digit. Two different policies see almost the same starts: episode <i>e</i> always builds from the same start, and only which env plays which episode shifts with the fight lengths. Pairing by encounter, as the exercise does, keeps that comparison honest.</p>
+
+  <h2>How many fights</h2>
+  <p>The standard error of a rate p over n fights is √(p(1−p)/n). Two rates differ "clearly" when the gap is about two standard errors of the difference. Solve for n:</p>
+  <div class="toy">
+    <div class="kicker">Toy · fights needed</div>
+    <div class="row">
+      <label>policy A <input type="range" id="pa" min="0.2" max="0.95" step="0.01" value="0.60"> <span class="val" id="paV">60%</span></label>
+      <label>policy B <input type="range" id="pb" min="0.2" max="0.95" step="0.01" value="0.65"> <span class="val" id="pbV">65%</span></label>
+      <label>fights each <input type="range" id="n" min="50" max="5000" step="50" value="300"> <span class="val" id="nV">300</span></label>
+    </div>
+    <div class="stats">
+      <div class="tile"><div class="k">SE of A</div><div class="v" id="sea">–</div></div>
+      <div class="tile"><div class="k">SE of the gap</div><div class="v" id="seg">–</div></div>
+      <div class="tile"><div class="k">gap in SEs</div><div class="v" id="z">–</div></div>
+      <div class="tile"><div class="k">fights each for 2 SEs</div><div class="v" id="need">–</div></div>
+    </div>
+    <canvas id="chart" height="200"></canvas>
+    <p class="muted" id="verdict"></p>
+  </div>
+  <p>The curve is a sample: both policies evaluated on batches of the chosen size, 60 batches each, as the true rates would scatter. At 300 fights the two distributions overlap heavily; at 2,000 they separate. A five-point gap needs about 700 fights per policy; a one-point gap, 18,000. That is the budget a sweep over learning rates has to pay <i>per configuration</i>, which is why day 18 picks a few and runs them long.</p>
+
+  <h2>The per-encounter table</h2>
+  <p>Day 5 measured V(start) per encounter under one policy. The same table for two policies is the most informative diff you can make: a net that gained ten points overall may have learned Jaw Worm and lost Gremlin Nob. The exercise's <code>compare</code> sorts the rows by the gap. Read the bottom rows first; a regression on one encounter is usually a bug (a mask edge case, a feature that saturates) rather than a trade-off.</p>
+  <p>Small cells lie. An encounter seen 12 times has a standard error of 14 points; the table prints the counts so you can ignore those rows or run more fights.</p>
+
+  <div class="box repo">
+    <div class="kicker">Where this lives in SpireZero</div>
+    <ul>
+      <li><span class="path"><code>crates/sts2-rl/src/start.rs</code></span>: <code>Order::Random</code>, how the episode number and the batch's seed pick a start, which is what makes the protocol reproducible.</li>
+      <li><span class="path"><code>crates/sts2-rl/src/envs.rs</code></span>: episodes are handed out in env order after the batch has stepped, the same for any thread count, so <code>threads=4</code> does not change the evaluation.</li>
+      <li><span class="path"><code>python/sts2/policy.py</code></span>: <code>RandomLegal</code>, the random baseline the Rust bench uses; the exercise's <code>random_legal</code> is its numpy twin.</li>
+    </ul>
+  </div>
+
+  <div id="quiz"></div>
+
+  <details class="math">
+    <summary>The math, gently</summary>
+    <div class="math-body">
+      <p>A win is a Bernoulli draw with mean p and variance p(1−p); the mean of n draws has variance p(1−p)/n. The difference of two independent means has variance SE<sub>A</sub>² + SE<sub>B</sub>². Requiring |p<sub>A</sub> − p<sub>B</sub>| ≥ z · √(SE<sub>A</sub>² + SE<sub>B</sub>²) with equal n gives</p>
+      <div class="formula">n = z² · (p<sub>A</sub>(1−p<sub>A</sub>) + p<sub>B</sub>(1−p<sub>B</sub>)) / (p<sub>A</sub> − p<sub>B</sub>)²</div>
+      <p>z = 1.96 is the usual 95% line. Pairing the two policies on the same starts removes the between-start variance from the difference and needs fewer fights; the per-encounter diff is the coarse version of that pairing.</p>
+    </div>
+  </details>
+
+  <script>
+    Course.init();
+    const $ = id => document.getElementById(id);
+    const se = (p, n) => Math.sqrt(p * (1 - p) / n);
+    function gauss(rand) { let u = 0, v = 0; while (u === 0) u = rand(); while (v === 0) v = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+    function calc() {
+      const pa = +$('pa').value, pb = +$('pb').value, n = +$('n').value;
+      $('paV').textContent = Math.round(pa * 100) + '%'; $('pbV').textContent = Math.round(pb * 100) + '%'; $('nV').textContent = n;
+      const sa = se(pa, n), sb = se(pb, n), sg = Math.sqrt(sa * sa + sb * sb), gap = Math.abs(pa - pb);
+      $('sea').textContent = (100 * sa).toFixed(1) + ' pts'; $('seg').textContent = (100 * sg).toFixed(1) + ' pts';
+      $('z').textContent = gap === 0 ? '0' : (gap / sg).toFixed(1);
+      $('need').textContent = gap === 0 ? '∞' : Course.fmtInt(Math.ceil(1.96 * 1.96 * (pa * (1 - pa) + pb * (1 - pb)) / (gap * gap)));
+      const rand = Course.rng(11);
+      const sample = p => Array.from({ length: 60 }, (_, i) => [i, Math.max(0, Math.min(1, p + se(p, n) * gauss(rand)))]);
+      Course.lineChart($('chart'), [{ name: 'A, batches of ' + n, data: sample(pa), dots: true, width: 1 }, { name: 'B', data: sample(pb), dots: true, width: 1, color: '--c2' }], { ymin: Math.max(0, Math.min(pa, pb) - 0.15), ymax: Math.min(1, Math.max(pa, pb) + 0.15), xlabel: 'repeated evaluations', yfmt: v => (100 * v).toFixed(0) + '%' });
+      $('verdict').textContent = gap / sg >= 2 ? 'The gap is at least two standard errors: this many fights would tell them apart.' : 'Under two standard errors: at this size the two policies would often swap places.';
+    }
+    ['pa', 'pb', 'n'].forEach(k => $(k).addEventListener('input', calc)); calc();
+
+    Course.quiz('#quiz', [
+      { q: 'Two checkpoints score 61% and 64% on 300 fights each. What do you know?', choices: ['The second is better', 'Nothing yet: the standard error of the gap is about 4 points, larger than the gap', 'The first overfit'], answer: 1, why: 'Three points on 300 fights is under one standard error of the difference. Run about 700 fights each, or more.', hint: 'Set the sliders to 61, 64 and 300.' },
+      { q: 'Why count the first N fights to end rather than run N steps?', choices: ['It is faster', 'A step count weights short fights more, so a policy that loses fast is scored on more of its losses', 'The env requires it'], answer: 1, why: 'Fights, not steps, are the unit the win rate is defined over.', hint: 'Which policy finishes more fights in 1,000 steps: a fast loser or a careful winner?' },
+      { q: 'A new featuriser gains 8 points overall and the per-encounter table shows one encounter dropping from 70% to 20%. First guess?', choices: ['A trade-off worth accepting', 'A bug: something about that encounter breaks the new features or the mask', 'Noise'], answer: 1, why: 'Learning rarely gives up a solved encounter for others; a collapse on one row is the signature of a feature or mask edge case. Check the count first, then the features for that encounter.', hint: 'Would a net choose to lose Jaw Worm?' },
+    ]);
+  </script>
+</main>
+</body>
+</html>
