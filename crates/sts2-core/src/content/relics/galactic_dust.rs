@@ -22,7 +22,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::GalacticDust(data) = &mut s.relic_mut(me).data else {
+    let RelicData::GalacticDust(data) = s.relic_data_mut(me) else {
         unreachable!("a GalacticDust has GalacticDust data");
     };
     data

@@ -64,7 +64,7 @@ impl Hooks for PumpkinCandle {
     type Me = RelicId;
 
     fn modify_max_energy(&self, s: &CombatState, me: RelicId, amount: Decimal) -> Decimal {
-        let RelicData::PumpkinCandle(data) = s.relic(me).data else {
+        let RelicData::PumpkinCandle(data) = *s.relic_data(me) else {
             unreachable!("a PumpkinCandle has PumpkinCandle data");
         };
         if data.kindle_count <= 0 {
@@ -74,7 +74,7 @@ impl Hooks for PumpkinCandle {
     }
 
     fn after_combat_end(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        let RelicData::PumpkinCandle(data) = &mut eng.s.relic_mut(me).data else {
+        let RelicData::PumpkinCandle(data) = eng.s.relic_data_mut(me) else {
             unreachable!("a PumpkinCandle has PumpkinCandle data");
         };
         data.kindle_count = (data.kindle_count - 1).max(0);

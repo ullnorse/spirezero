@@ -8,6 +8,7 @@
 
 use sts2_core::combat::{CardId, CreatureId, Status};
 use sts2_core::content::cards::{CardKind, Keywords};
+use sts2_core::content::enchantments::{Enchantment, EnchantmentKind};
 use sts2_core::rng::Rng;
 use sts2_core::run::{
     Act1, Modifier, Run, RunAction, RunCard, RunDecision, SelectPurpose, UnlockState,
@@ -485,6 +486,26 @@ impl Game {
         while let Some(next) = sts2_view::ui::follow_up(&self.run).filter(|_| self.auto_proceed) {
             self.apply_one(next);
         }
+    }
+
+    /// Applies the run's recordable action `index` when the run is in a fight and it is a
+    /// fight's action (WEB82: the combat net's move); whether it did.
+    pub fn play_in_fight(&mut self, index: u32) -> bool {
+        if !self.in_fight() {
+            return false;
+        }
+        let action = usize::try_from(index)
+            .ok()
+            .and_then(|i| self.recordable_actions().into_iter().nth(i));
+        let Some(action @ RunAction::Combat(_)) = action else {
+            return false;
+        };
+        self.status = None;
+        self.events.clear();
+        self.reveal.clear();
+        self.tossing = None;
+        self.act(action);
+        true
     }
 
     /// Applies `action` alone, which comes from the engine's legal actions.
@@ -997,6 +1018,14 @@ impl Web {
         self.game.view()
     }
 
+    /// Plays the run's action `index` (as the save lists them) if it is a fight's and the run
+    /// is in a fight (WEB82: the combat net's move); returns the new view.
+    #[must_use]
+    pub fn play(&mut self, index: u32) -> String {
+        self.game.play_in_fight(index);
+        self.game.view()
+    }
+
     /// Applies an `Input` given as JSON; returns the new view.
     #[must_use]
     pub fn input(&mut self, json: &str) -> String {
@@ -1137,10 +1166,34 @@ impl Web {
         let markup = match kind {
             "relic" => d.relic(id),
             "potion" => d.potion(id),
+            // A card or enchantment an event option grants, as a fresh one.
+            "card" => CardKind::from_id(id).and_then(|c| d.run_card(RunCard::new(c.entry()))),
+            "enchantment" => {
+                let (id, amount) = id.split_once(':').unwrap_or((id, "1"));
+                EnchantmentKind::from_id(id).and_then(|kind| {
+                    d.enchantment(Enchantment::new(kind, amount.parse().unwrap_or(1)), &[])
+                })
+            }
             _ => None,
         };
         let lines = markup.map_or_else(Vec::new, |m| text::lines(&m, Role::Plain));
         serde_json::to_string(&lines).unwrap_or_default()
+    }
+
+    /// The name of a card, relic, potion or enchantment an event option grants (`kind` as for
+    /// [`Web::describe`]), for its sheet's title.
+    #[must_use]
+    pub fn grant_name(&self, kind: &str, id: &str) -> String {
+        match kind {
+            "relic" => names::relic(id),
+            "potion" => names::potion(id),
+            "card" => CardKind::from_id(id).map_or_else(
+                || names::title_case(id),
+                |c| names::run_card(RunCard::new(c.entry())),
+            ),
+            _ => EnchantmentKind::from_id(id.split(':').next().unwrap_or(id))
+                .map_or_else(|| names::title_case(id), |k| k.name().to_owned()),
+        }
     }
 
     /// A card as it is and one upgrade up, as `{now, up}` JSON of card faces (`CardFace`), for

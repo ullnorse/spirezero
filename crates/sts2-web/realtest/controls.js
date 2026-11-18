@@ -8,7 +8,7 @@ const screenOf = () => {
   const v = window.sts2 && sts2.view();
   return v ? v.decision + (v.fight ? ':fight' : '') : 'none';
 };
-const FIXED = '#top *, #dock *, #start *, #sheet .close, .chipbtn, .primary, .tile, .segment *, .hintbtn';
+const FIXED = '#top *, #dock *, #start *, #sheet .close, .chipbtn, .primary, .tile, .segment *';
 const SKIP = /^(s-|r-|sel|aim|kbd|usable|long|word|squeeze|asking|unaffordable|sale|dead|peek|in|out|lift|drag)/;
 const kindOf = (e) => {
   const c = e.closest('.card, .enemy, .pet, .pot, .pile, .ware, .showitem, .row, g.node, .iconbtn, .chip, .tile, button, input, [role=button]') || e;

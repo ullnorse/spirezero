@@ -76,6 +76,9 @@ class O:
     def tap(self, sel, wait=0.5):
         ok = self.r.click_sel(sel)
         self.settle(wait)
+        if ok and "g.node" in sel and self.r.touch and self.view()["decision"] == "map":
+            ok = self.r.click_sel(sel)  # touch: the first tap on a room previews its routes, the second travels
+            self.settle(wait)
         return ok
 
     def tap_js(self, expr, wait=0.5):
@@ -172,6 +175,8 @@ class O:
             node = rows_of(v)
             if not self.tap("g.node.reach", 1.5) and not self.tap_bid(node[0]["id"]):
                 raise Skip("no map node")
+            if self.view()["decision"] == "map":  # touch: the first tap previews, the second travels
+                self.tap("g.node.reach", 1.5)
         for _ in range(8):
             v = self.view()
             if v["fight"]:
@@ -648,7 +653,7 @@ def start_tiles(o):
 
 @scenario
 def ascension_detail(o):
-    """WEB55: stepping the ascension up with real taps shows that level's title and description from ascension.json; the line keeps its size; the list names levels 1..n."""
+    """WEB55: stepping the ascension up with real taps shows that level's title and description from ascension.json; the line keeps its size."""
     p = o.p
     path = os.path.join(cache_dir("data"), "text/ascension.json")
     if not os.path.exists(path):
@@ -678,11 +683,6 @@ def ascension_detail(o):
     o.check("ascension: the line keeps its place and size at every level", len(geo) == 1, f"{sorted(geo)}")
     overflow = p.js("(() => { const e = document.querySelector('#start .ascinfo'); const d = e.querySelector('.ascdesc'); return d.getBoundingClientRect().bottom - e.getBoundingClientRect().bottom; })()")
     o.check("ascension: the longest description fits its line", overflow is not None and overflow <= 0, f"{overflow}px over")
-    o.tap_js("document.querySelector('#start .ascinfo')", 0.5)
-    rows = p.js("[...document.querySelectorAll('#sheet .asclvl b')].map((b) => b.textContent)")
-    want = [f"{i} · {asc[f'LEVEL_{i:02d}.title']}" for i in range(1, 11)]
-    o.check("ascension: tapping the line lists levels 1 to 10", rows == want, f"{rows}")
-    o.r.shot("ascension-list")
 
 
 @scenario
@@ -863,6 +863,9 @@ def map_pick(o):
     pick = cells[-1]
     o.tap(f'g.node[data-button="{pick["button"]}"]', 2.0)
     v = o.view()
+    if v["decision"] == "map":  # touch: the first tap previews the routes, the second travels
+        o.tap(f'g.node[data-button="{pick["button"]}"]', 2.0)
+        v = o.view()
     kind_ok = {"Monster": v["fight"], "Elite": v["fight"], "Boss": v["fight"], "Shop": v["decision"] == "shop", "RestSite": v["decision"] == "rest",
                "Treasure": v["decision"] == "treasure"}.get(pick["room"], v["decision"] != "map")
     o.tap("#top .iconbtn:nth-of-type(2)", 0.9)
@@ -888,7 +891,11 @@ def map_near_tap(o):
     o.p.click(r[0] + 6, r[1] - 30)
     o.settle(2.0)
     v = o.view()
-    o.check("map: a tap 30px off a next room travels to it", v["decision"] != "map" or v["fight"], f"still {v['decision']}")
+    if v["decision"] == "map" and not v["fight"]:  # the first tap previews, the second travels
+        o.p.click(r[0] + 6, r[1] - 30)
+        o.settle(2.0)
+        v = o.view()
+    o.check("map: a tap 30px off a next room previews it, a second travels", v["decision"] != "map" or v["fight"], f"still {v['decision']}")
 
 
 @scenario
@@ -908,6 +915,9 @@ def boss_tap(o):
         o.check("map: no dock button for the boss on a phone", not o.p.js("!!document.querySelector('#dock .next button, #dock .next .row')"))
     o.tap("g.node.boss[data-boss]", 2.5)
     v = o.view()
+    if v["decision"] == "map" and not v["fight"]:  # touch: the first tap previews, the second travels
+        o.tap("g.node.boss[data-boss]", 2.5)
+        v = o.view()
     o.check("map: a tap on the boss starts the boss fight", bool(v["fight"]), f"decision {v['decision']} room {v.get('room')}")
 
 
@@ -1035,7 +1045,7 @@ def menu_tiles(o):
     """The menu's tiles open what they name; the sheet's close button closes it."""
     o.setup(4, "WEBTEST1")
     o.to_map(0)
-    names = ("Relics", "Potions", "Rooms", "Help")  # Deck and Map are the top bar's buttons (WEB60)
+    names = ("Relics", "Potions", "Rooms")  # Deck and Map are the top bar's buttons (WEB60)
     for word in names:
         if (o.p.js("document.querySelector('#sheet:not([hidden]) .sheethead h2')?.textContent") or "") != "Menu":
             o.tap("#top .iconbtn:nth-of-type(3)", 0.6)
@@ -1046,11 +1056,11 @@ def menu_tiles(o):
             continue
         o.tap(f"#sheet .tile:nth-child({tile + 1})", 0.8)
         title = o.p.js("document.querySelector('#sheet:not([hidden]) .sheethead h2')?.textContent") or ""
-        o.check(f"menu tile {word} opens its sheet", word.lower()[:4] in title.lower() or (word == "Potions" and title == "Info") or (word == "Rooms" and "oom" in title) or (word == "Help"), f"title {title!r}")
+        o.check(f"menu tile {word} opens its sheet", word.lower()[:4] in title.lower() or (word == "Potions" and title == "Info") or (word == "Rooms" and "oom" in title), f"title {title!r}")
         if not o.tap("#sheet .iconbtn.close", 0.6):
             o.r.close_sheet()
         now = o.p.js("document.querySelector('#sheet:not([hidden]) .sheethead h2')?.textContent")
-        o.check(f"sheet close button closes ({word})", now in (None, "Menu"), f"sheet now {now!r}")  # Help is drawn over the menu, which shows again
+        o.check(f"sheet close button closes ({word})", now in (None, "Menu"), f"sheet now {now!r}")
 
 
 @scenario
@@ -1073,6 +1083,11 @@ def run_review(o):
         raise Skip(f"the run did not end ({v['decision']})")
     o.settle(3.6)  # the Defeat beat clears
     moves = len(v["save"]["actions"])
+    o.tap("#screen .runsum", 0.5)
+    sheet = o.p.js("document.querySelector('#sheet:not([hidden])')?.innerText || ''")
+    o.check("summary: the end screen's Run summary shows floor, deck, relics and floor by floor", all(w in sheet for w in ("Floor", "Deck", "Relics", "Floor by floor")), sheet[:160].replace("\n", " "))
+    o.tap("#sheet .close", 0.4)
+    o.check("summary: closing it returns to the end screen", o.view()["over"] and o.p.js("!!document.querySelector('#screen .runsum')"))
     o.check("review: the end screen offers it, and nothing has been worked out yet", o.p.js("!!document.querySelector('#screen .reviewrun') && !localStorage.getItem('sts2-reviews-v1') && !document.getElementById('review')"))
     o.tap("#screen .reviewrun", 0.1)
     o.check("review: the row opens it", o.p.js("!!document.getElementById('review')"))
@@ -1299,7 +1314,7 @@ def web60_compendium_filter(o):
 
 @scenario
 def web60_start_desktop(o):
-    """WEB60: the desktop start screen fits the window without scrolling at every ascension, its title whole."""
+    """WEB60: the desktop start screen fits the window without scrolling, its title whole."""
     if o.r.touch:
         return
     o.p.open(URL)
@@ -1826,7 +1841,7 @@ def web65_hand_text(o):
 @scenario
 def web66_desktop(o):
     """WEB66 (desktop only): an ancient's title, text and choices in one centred column; the map has no column of room
-    buttons (its rooms are the choice, by click or by the arrows and Enter), is wide, and keeps Hint; a deck pick's Back
+    buttons (its rooms are the choice, by click or by the arrows and Enter), is wide, and keeps the hint toggle; a deck pick's Back
     sits at the header bar's left, on the title's line, aligned with the grid's left edge, and stays in view while the
     grid scrolls."""
     if o.r.touch:
@@ -1848,7 +1863,7 @@ def web66_desktop(o):
         return {w: innerWidth, map: Math.round(s.width), next: document.querySelectorAll('#dock .next, #dock .nextroom').length,
           hint: !!hr && hr.width > 0 && hr.right <= innerWidth && hr.bottom <= innerHeight, lg: Math.round(document.querySelector('.planner .lg')?.getBoundingClientRect().height ?? 0)}; })()""")
     o.r.shot("web66-map")
-    o.check("desktop map: no column of room buttons, the map half the width or more, Hint in view, legend counters 40px+",
+    o.check("desktop map: no column of room buttons, the map half the width or more, hint toggle in view, legend counters 40px+",
             m["next"] == 0 and m["map"] >= 0.5 * m["w"] and m["hint"] and m["lg"] >= 40, f"{m}")
     # the keyboard still travels: an arrow lights a next room, Enter goes there
     p.key("ArrowUp")
@@ -1861,7 +1876,7 @@ def web66_desktop(o):
     # a deck pick: Smith on a deck of 10 different cards (two rows: the grid scrolls)
     o.setup(0, "WEBTEST2")
     o.to_map(0)
-    o.debug({"room": "rest", "cards": ["STRIKE_IRONCLAD", "DEFEND_IRONCLAD", "BASH", "ANGER", "SHRUG_IT_OFF", "BLUDGEON", "CINDER", "BREAKTHROUGH", "MANGLE", "SETUP_STRIKE"]})
+    o.debug({"room": "rest", "cards": ["STRIKE_IRONCLAD", "DEFEND_IRONCLAD", "BASH", "ANGER", "SHRUG_IT_OFF", "BLUDGEON", "CINDER", "BREAKTHROUGH", "MANGLE", "SETUP_STRIKE", "ARMAMENTS", "BURNING_PACT", "UNLEASH", "REAVE"]})
     smith = next((r for r in rows_of(o.view()) if plain(r["label"]).startswith("Smith")), None)
     if not smith:
         raise Skip("no smith")
@@ -1887,3 +1902,41 @@ def web66_desktop(o):
             f"scrolled {scrolled}; back {g['back']} -> {g2['back']}; top bar bottom {g2['top'][3]}")
     o.tap("#screen > .head > .chipbtn", 0.8)
     o.check("desktop pick: Back leaves the grid", o.view()["decision"] == "rest", o.view()["decision"])
+
+
+@scenario
+def web77_hint_glow(o):
+    """WEB77: no Hint button or text box; the top bar's toggle (off by default) makes the bot's pick glow, in a fight (card) and on the map (room), and off clears it."""
+    o.setup(0, "WEBTEST2")
+    o.to_map(0)
+    o.settle(0.8)
+    o.check("hint: no Hint button, no bot line, toggle off by default", o.p.js("!document.querySelector('.hintbtn, #botsay') && !!document.querySelector('#top .askbot:not(.on)') && !document.querySelector('.botpick')"))
+    o.tap("#top .askbot", 0.3)
+    lit = False
+    for _ in range(60):
+        if o.p.js("!!document.querySelector('#screen .botpick, #dock .botpick')"):
+            lit = True
+            break
+        o.settle(0.5)
+    o.r.shot("web77-map-glow")
+    o.check("hint: on, the bot's pick glows on the map; toggle is lit and the setting follows", lit and o.p.js("document.querySelector('#top .askbot').classList.contains('on') && sts2.pref('hints') === 'always' && !document.getElementById('botsay')"))
+    o.tap("#top .askbot", 0.4)
+    o.check("hint: off clears the glow", o.p.js("!document.querySelector('.botpick') && sts2.pref('hints') !== 'always'"))
+    o.tap("#top .askbot", 0.3)
+    for _ in range(60):
+        if o.p.js("!!document.querySelector('#screen .botpick, #dock .botpick')"):
+            break
+        o.settle(0.5)
+    if not o.tap("#screen g.node.reach.botpick", 1.5):
+        raise Skip("the lit room could not be tapped")
+    v = o.view()
+    if not v["fight"]:
+        raise Skip(f"not a fight ({v['decision']})")
+    glow = False
+    for _ in range(80):
+        if o.p.js("!!document.querySelector('#screen .hand .botpick, #dock .botpick')"):
+            glow = True
+            break
+        o.settle(0.5)
+    o.r.shot("web77-fight-glow")
+    o.check("hint: in a fight a card in the hand (or End Turn) glows", glow)

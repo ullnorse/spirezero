@@ -21,6 +21,7 @@ pub mod policy;
 pub mod reach;
 pub mod run_session;
 pub mod session;
+pub mod solve;
 pub mod sweep;
 
 /// The error type for everything that can go wrong here; all failures are reported as text.

@@ -49,7 +49,11 @@ impl CardModel for Catastrophe {
     }
 
     fn on_play(&self, eng: &mut Engine<'_>, play: &CardPlay) -> Flow {
-        for _ in 0..eng.s.card(play.card).int_var(Var::Cards) {
+        // The game's `i < DynamicVars.Cards.IntValue` re-reads the count each pass: an
+        // autoplayed Apotheosis upgrades this card (it is in the Play pile) and adds a pick.
+        let mut i = 0;
+        while i < eng.s.card(play.card).int_var(Var::Cards) {
+            i += 1;
             let hooked = eng.hooked();
             let playable: Vec<CardId> = hooked
                 .s

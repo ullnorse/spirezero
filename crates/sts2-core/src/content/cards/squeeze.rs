@@ -45,7 +45,7 @@ impl CardModel for Squeeze {
         const VARS: &[CardVar] = &[
             CardVar::new(Var::CalculationBase, 25).upgrade(5),
             CardVar::new(Var::ExtraDamage, 5).upgrade(1),
-            CardVar::calculated(Var::CalculatedDamage, osty_attack_cards),
+            CardVar::calculated(Var::CalculatedDamage, osty_attack_cards).from_osty(),
         ];
         VARS
     }

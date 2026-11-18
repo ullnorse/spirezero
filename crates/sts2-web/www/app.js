@@ -1,14 +1,14 @@
 // The phone page: draws sts2-view's screens (the JSON `Web.view()` returns) and sends taps back.
 // Nothing here knows a game rule: every button is the model's, every number the engine's.
 import { report as bugReport, deliver as bugDeliver, decodeRun } from "./bugreport.js";
-import init, { Web, load_text, text_tables, modifier_list, random_modifiers, daily_run, library_counts, library_part, library_glossary } from "./pkg/sts2_web.js";
+import init, { Web, load_text, text_tables, modifier_list, random_modifiers, library_counts, library_part, library_glossary } from "./pkg/sts2_web.js";
 import { icon, iconSvg, GLYPH_ICON } from "./icons.js";
 import { routePlanner } from "./map.js";
 import * as fx from "./combatfx.js";
 import * as ffx from "./fightfx.js";
 import { play as sound, setSound, setTrack, unlock as unlockSound } from "./sound.js";
 import { initHover, attachTip, hideTip } from "./hover.js";
-import { initExtras, startExtras, shareThisRun, recordRun, attachPreview, upgradeSection, takeSharedLink } from "./extras.js";
+import { initExtras, startExtras, shareThisRun, recordRun, runSheet, lastRunId, attachPreview, upgradeSection, takeSharedLink } from "./extras.js";
 import { pairBlock } from "./preview.js";
 
 const SAVE = "sts2-save-v1";
@@ -80,6 +80,8 @@ function artImg(kind, id, cls = "art") {
 const portrait = (c, cls = "mono") => artImg("character", c.name.toUpperCase(), `${cls} portrait`) ?? el("span", cls, c.name[0]);
 
 const $ = (id) => document.getElementById(id);
+// Settings > Speed: Fast runs the page's timings at half length (CSS reads `--spd`).
+const K = (ms) => Math.round(ms * (prefs.speed === "fast" ? 0.5 : 1));
 // Motion off by the settings, or by the phone's when the settings say "match".
 const reduced = () => prefs.motion === "reduced" || (prefs.motion !== "full" && matchMedia("(prefers-reduced-motion: reduce)").matches);
 let game = null;
@@ -93,7 +95,7 @@ let textTables = 0;
 // "sheet", "start") and the view.
 const hooks = [];
 const runHooks = (kind) => hooks.forEach((f) => f(kind, view));
-let prefs = { theme: "dark", sound: true, volume: "low", motion: "auto", text: "normal", confirmEnd: false, hints: "manual", keepAwake: true, vibration: true, ...JSON.parse(localStorage.getItem(PREFS) ?? "{}") };
+let prefs = { theme: "dark", sound: true, volume: "low", motion: "auto", speed: "normal", text: "normal", confirmEnd: false, hints: "manual", netFights: false, netSpeed: "normal", netPotions: "save", keepAwake: true, vibration: true, ...JSON.parse(localStorage.getItem(PREFS) ?? "{}") };
 const savePrefs = () => localStorage.setItem(PREFS, JSON.stringify(prefs));
 // A haptic tick or pattern (platform.js: the Vibration setting); iOS has no `vibrate`.
 const buzz = (p) => prefs.vibration && navigator.vibrate?.(p);
@@ -163,7 +165,6 @@ function onLeave(leave) {
   if (leave === "select") showStart();
   else if (leave === "new-seed") startRun(view.save.character, randomSeed(), view.save.ascension);
   else if (leave === "settings") showLocal(settingsSheet());
-  else if (leave === "help") showLocal(helpSheet());
 }
 
 function randomSeed() {
@@ -173,14 +174,13 @@ function randomSeed() {
   return s;
 }
 
-// `modifiers` are the Custom Run's keys; `daily` marks the run as that day's.
-function startRun(character, seed, ascension, modifiers = [], daily = false) {
+// `modifiers` are the Custom Run's keys.
+function startRun(character, seed, ascension, modifiers = []) {
   try {
     game = new Web(character, seed, ascension, JSON.stringify(modifiers));
     fightSlots = null;
     keepSave = true;
-    game.set_practice(!daily && !!startOpts.practice);
-    if (daily) game.set_daily(true);
+    game.set_practice(!!startOpts.practice);
     game.set_flat_shop?.(true);
   } catch (e) {
     showStart(String(e));
@@ -242,7 +242,7 @@ function hideStart() {
   setTimeout(() => {
     root.hidden = true;
     root.classList.remove("leaving");
-  }, 260);
+  }, K(260));
 }
 
 // ---- drawing ------------------------------------------------------------------------------
@@ -694,7 +694,7 @@ function renderFight(s, main) {
   }
   else if (incoming) board.append(incomingLine(incoming));
   if (you) {
-    const panel = youPanel(you, pets, orbs, targeting);
+    const panel = youPanel(you, pets, orbs, targeting, incoming);
     // On a phone the aim bar lies over your HP row, in no row of its own.
     if (aimBar && phone()) panel.append(aimBar);
     board.append(panel);
@@ -791,6 +791,8 @@ function hpBar(hp, max, block, preview, prevHp, powers) {
   fill.style.width = pct(Math.max(0, (prevHp ?? hp) - cut));
   if (prevHp != null && prevHp !== hp) fill.dataset.to = pct(Math.max(0, hp - cut));
   const bar = el("div", "hpbar", fill);
+  attachTip(bar, () => ({ title: "", nodes: [glossary([], ["Hit Points"])].filter(Boolean) }));
+  holdTerm(bar, ["Hit Points"]);
   if (poisonLethal || doomLethal) fill.classList.add("hidden");
   if (poison > 0 && hp > 0) {
     const seg = el("i", "poisonfg");
@@ -930,20 +932,24 @@ function intentChips(short, long, tips) {
   return row;
 }
 
+// "Incoming N · Block B (· N to pet) (· may vary)": the same words on the desktop band and the phone's line in your panel.
+function incomingText(i) {
+  const parts = [`Incoming ${i.total ?? 0}`, `Block ${blocksOf(view.screen, "You")[0]?.block ?? 0}`];
+  if (i.absorbed) parts.push(`${i.absorbed} to ${blocksOf(view.screen, "Pet")[0]?.name ?? "your pet"}`);
+  return parts.join(" · ") + (i.certain || !i.total ? "" : " · may vary");
+}
+
 function incomingLine(i) {
-  if (!i.total && !i.lethal) return el("div", "incoming calm", icon("shield"), "No damage incoming");
+  if (!i.total && !i.lethal) return el("div", "incoming calm", icon("shield"), "No damage incoming", el("span", "why", incomingText(i)));
   const kids = [icon("sword")];
   if (i.lethal) kids.push(el("b", null, "Lethal"), ` −${i.hp_loss} HP`);
   else if (i.hp_loss) kids.push(el("b", null, `−${i.hp_loss} HP`), el("span", "dimmer", ` → ${i.hp_after}`));
   else kids.push(el("b", null, "All blocked"));
-  const parts = [`${i.total} incoming`];
-  if (i.blocked) parts.push(`${i.blocked} blocked`);
-  if (i.absorbed) parts.push(`${i.absorbed} to ${blocksOf(view.screen, "Pet")[0]?.name ?? "your pet"}`);
-  kids.push(el("span", "why", parts.join(" · ") + (i.certain ? "" : " · may vary")));
+  kids.push(el("span", "why", incomingText(i)));
   return el("div", `incoming${i.lethal ? " lethal" : ""}${i.hp_loss ? "" : " safe"}${i.stale ? " stale" : ""}`, kids);
 }
 
-function youPanel(y, pets, orbs, targeting) {
+function youPanel(y, pets, orbs, targeting, incoming) {
   const panel = el("section", "you");
   const was = before?.fight ? blocksOf(before.screen, "You")[0] : null;
   // The portrait shows only where the fight is a stage (a laptop): you facing the enemies.
@@ -957,6 +963,7 @@ function youPanel(y, pets, orbs, targeting) {
   fx.youNumbers(me);
   if (!targeting) tap(me, () => readCreature(y));
   me.append(powerChips(y.powers) ?? el("div", "powers none"));
+  if (incoming) me.append(el("div", "incline", incomingText(incoming)));
   const res = (y.resources ?? []).filter((r) => !(y.orb_slots && /orb slot/.test(plain(r))));
   if (res.length) me.append(el("div", "res", res.map((r) => rich(r))));
   if (y.orb_slots) me.append(orbTokens(orbs, y.orb_slots));
@@ -990,7 +997,7 @@ function orbTokens(orbs, slots) {
       continue;
     }
     const t = el("span", `orb o-${o.name.toLowerCase().replace(/\W+/g, "")}`, el("b", null, `${o.passive}`), el("small", null, `${o.evoke}`));
-    t.title = `${o.name}: ${o.passive} each turn, ${o.evoke} when evoked`;
+    termTip(t, [o.name], () => el("p", null, `${o.passive} each turn, ${o.evoke} when evoked`));
     row.append(t);
   }
   return row;
@@ -1345,7 +1352,7 @@ function dropCard(x, y) {
   if (!at) {
     g.classList.add("back");
     g.style.transform = "none";
-    setTimeout(() => g.remove(), 200);
+    setTimeout(() => g.remove(), K(200));
     send("Back");
     return;
   }
@@ -1473,6 +1480,13 @@ function renderRoom(s, main) {
 // A treasure's or ancient's rows with the relic each offers (`Web.room_relics`), read like a
 // reward's: its picture, its `i`.
 function withRelics(rows) {
+  // An event option that is only a relic (the doll room) reads like a treasure's: its text under its name.
+  if (view.decision === "event") {
+    return rows.map((r) => {
+      const only = r.grants?.length === 1 && r.grants[0].Relic;
+      return only && !r.info && !(r.detail ?? []).some((d) => plain(d).trim()) ? { ...r, info: { Relic: only } } : r;
+    });
+  }
   if (view.decision !== "treasure" && view.decision !== "ancient") return rows;
   const relics = new Map(JSON.parse(game?.room_relics?.() ?? "[]").map((r) => [r.id, r.relic]));
   return rows.map((r) => (relics.has(r.id) && !r.info ? { ...r, info: { Relic: relics.get(r.id) } } : r));
@@ -1634,6 +1648,8 @@ function list(rows) {
   // The run's end: Quit and Character select both go to the start screen; keep one.
   if (view.over && rows.some((r) => /^Character select/.test(plain(r.label))))
     rows = rows.filter((r) => !/^Quit\b/.test(plain(r.label)));
+  // The run's summary (floor, killer, deck, relics, floor by floor, the bot review) sits above the end screen's choices.
+  if (view.over && lastRunId()) out.append(tap(el("button", "row runsum", el("span", "main", el("span", "lab", "Run summary"), el("span", "sub", `Floor ${view.summary?.floor ?? ""}${view.summary?.killer ? ` · ${view.summary.killer}` : ""} · deck, relics, floor by floor`))), () => showLocal(runSheet(lastRunId()))));
   for (const [i, r] of rows.entries()) {
     if (r.card) {
       if (!grid) {
@@ -1683,7 +1699,7 @@ function row(b) {
   main.append(st === "Picked" && b.confirm ? el("span", "lab ask", forTouch(label)) : rich(words, "lab"));
   for (const d of b.detail ?? []) if (plain(d).trim()) main.append(rich(d, "sub"));
   // A reward's relic or potion says what it does, not only its name.
-  if ((view?.decision === "rewards" || view?.decision === "treasure") && offer && !(b.detail ?? []).some((d) => plain(d).trim())) {
+  if ((view?.decision === "rewards" || view?.decision === "treasure" || view?.decision === "event") && offer && !(b.detail ?? []).some((d) => plain(d).trim())) {
     const [kind, id] = Object.entries(b.info)[0];
     const lines = JSON.parse(game?.describe(kind.toLowerCase(), id) ?? "[]");
     for (const l of lines) if (plain(l).trim()) main.append(rich(l, "sub"));
@@ -1707,9 +1723,35 @@ function row(b) {
     }
     hold(e, () => readOffer(b, e));
   }
+  // An event option's grants (WEB72): what each card, curse, relic, potion or enchantment is, on the `i` and hold.
+  if (b.grants?.length && !b.info) {
+    const info = el("span", "info", "i");
+    info.setAttribute("role", "button");
+    info.setAttribute("aria-label", "Read");
+    tap(info, () => showLocal(grantsSheet(b)));
+    e.append(info);
+    hold(e, () => showLocal(grantsSheet(b)));
+    attachTip(e, () => ({ title: "", nodes: grantsSheet(b).body() }));
+  }
   e.dataset.bid = b.id;
   tap(e, () => send({ Tap: b.id }));
   return e;
+}
+
+// What an event option grants: each item's name, text and glossary.
+function grantsSheet(b) {
+  return {
+    title: plain(b.label),
+    body: () =>
+      b.grants.map((g) => {
+        const [kind, id] = Object.entries(g)[0];
+        const k = kind.toLowerCase();
+        const box = el("div", "grant");
+        box.append(el("b", "grantname", game.grant_name(k, id)));
+        box.append(textSheet(JSON.parse(game.describe(k, id))));
+        return box;
+      }),
+  };
 }
 
 // A reward row's icon, and whether it opens a choice.
@@ -1780,7 +1822,8 @@ function mapImage(id, px, cls) {
 }
 
 function mapView(g, inSheet) {
-  const W = 360;
+  // The paper is wider than the page it is drawn at (a viewBox of 480 on a desktop, 560 on a phone), so the rooms look smaller on it and more of the act shows.
+  const W = DESKTOP.matches && !inSheet ? 480 : 560;
   const cols = Math.max(g.width, 1);
   const H = (g.height + 1) * MAP_ROW + MAP_PAD * 2;
   // A room beside another in its row keeps to its column (no jitter), so neighbours never draw
@@ -1823,7 +1866,7 @@ function mapView(g, inSheet) {
     const y = py(c.y);
     const tag = you ? `<g class="youtag" transform="translate(${x < W / 2 ? 30 : -30} 0)"><rect x="${x < W / 2 ? 0 : -40}" y="-11" width="40" height="22" rx="11"/><text x="${x < W / 2 ? 20 : -20}" y="4.5" text-anchor="middle">YOU</text></g>` : "";
     const gap = room(c);
-    const hit = c.reachable ? `<circle class="hit" r="${Math.min(30, gap / 2)}"/>` : c.through?.length ? `<circle class="hit" r="${Math.min(19, gap / 2)}"/>` : "";
+    const hit = c.reachable ? `<circle class="hit" r="${Math.min(34, gap / 2)}"/>` : c.through?.length ? `<circle class="hit" r="${Math.min(19, gap / 2)}"/>` : "";
     if (art) {
       const id = MAP_ART[name] ?? "map_unknown";
       const px = Math.min(name === "ancient" ? 72 : 62, gap - 4);
@@ -1839,7 +1882,8 @@ function mapView(g, inSheet) {
   const by = py(g.boss_at[1]);
   const bossIcon = art && mapImage(`${g.boss_art.toLowerCase()}_icon`, 150, "mi");
   if (bossIcon) {
-    // The boss's own icon, its name under it.
+    // The boss's own icon, its name under it (for the bosses whose map node is an animation,
+    // Ceremonial Beast, Queen and The Insatiable, art-import renders its skeleton as one).
     nodes += `<g class="node boss art${g.boss_button ? " go" : ""}"${g.boss_button ? ` data-boss="${g.boss_button}"` : ""} transform="translate(${bx} ${by - 44})">${bossIcon}</g>`;
   } else {
     const act = g.act ? `ACT ${g.act} BOSS` : "BOSS";
@@ -1850,7 +1894,7 @@ function mapView(g, inSheet) {
   svg.innerHTML = `${art ? tints : ""}<g class="edges">${paths}</g>${nodes}`;
   if (art) svg.classList.add("inked");
   const wrap = el("div", `map${inSheet ? " insheet" : ""}`);
-  if (g.kinds?.length) wrap.append(routePlanner(g, svg, { el, send, uiArt, MAP_ART, art }));
+  if (g.kinds?.length) wrap.append(routePlanner(g, svg, { el, send, uiArt, MAP_ART, art, tip: kindTip, read: readTerm }));
   // The act's page under the map: its top, its middle repeated, its bottom.
   const page = el("div", "mappage", svg);
   const area = (g.area || "").toLowerCase();
@@ -1928,9 +1972,9 @@ function renderDock(s) {
     }
     dock.append(bar);
   } else if (view.decision === "map") {
-    // On a phone and a desktop the map's own rooms are the buttons (one tap or click travels; the
-    // arrows and Enter reach them too); a mid-size screen keeps these.
-    const onMap = new Set(phone() || DESKTOP.matches ? blocksOf(s, "Map").flatMap((g) => [...g.cells.map((c) => c.button), g.boss_button]).filter(Boolean) : []);
+    // The map's own rooms are the buttons at every size (one tap or click travels; the arrows and
+    // Enter reach them too): no second list of the same rooms. Only a room the map does not draw is listed.
+    const onMap = new Set(blocksOf(s, "Map").flatMap((g) => [...g.cells.map((c) => c.button), g.boss_button]).filter(Boolean));
     const rows = blocksOf(s, "List").flatMap((l) => l.rows).filter((r) => !onMap.has(r.id));
     if (rows.length) {
       const grid = el("div", `next n${Math.min(rows.length, 4)}`);
@@ -1989,7 +2033,7 @@ function energyOrb(you, s) {
   // `RotationLayers`: layer 2, and layer 3 when more lie above it).
   const who = CHARACTER_IDS[view?.save?.character]?.toLowerCase();
   const layers = [1, 2, 3, 4, 5].map((n) => [n, uiArt(`${who}_orb_layer_${n}`)]).filter(([, a]) => a);
-  if (!layers.length) return el("span", cls.filter(Boolean).join(" "), el("b", null, `${you.energy}`), el("small", null, `/${you.max_energy}`));
+  if (!layers.length) return termTip(el("span", cls.filter(Boolean).join(" "), el("b", null, `${you.energy}`), el("small", null, `/${you.max_energy}`)), ["Energy"]);
   const top = Math.max(...layers.map(([n]) => n));
   const orb = el("span", [...cls, "orbart"].filter(Boolean).join(" "));
   for (const [n, a] of layers) {
@@ -2001,7 +2045,7 @@ function energyOrb(you, s) {
   const num = el("b", null, `${you.energy}/${you.max_energy}`);
   orb.style.setProperty("--orbline", ORB_LINE[who] ?? "#333");
   orb.append(num);
-  return orb;
+  return termTip(orb, ["Energy"]);
 }
 
 // A pile's button: the game's pile icon with its count on the corner.
@@ -2011,8 +2055,9 @@ function pileButton(id, count, word, sheet) {
     ? el("button", "pile pileart", Object.assign(el("img", null), { src: a.href, alt: "" }), el("b", null, `${count}`))
     : el("button", "pile", el("b", null, `${count}`), el("small", null, word));
   b.setAttribute("aria-label", `${word}: ${count}`);
-  b.title = word;
   b.dataset.pile = sheet;
+  attachTip(b, () => ({ title: "", nodes: [glossary([], [word])].filter(Boolean) }));
+  holdTerm(b, [word]);
   return tap(b, () => open(sheet));
 }
 
@@ -2169,7 +2214,7 @@ function pileView(faces) {
   return wrap;
 }
 
-const MENU_ICONS = { d: "deck", v: "relic", i: "potion", m: "map", l: "log", a: "draw", s: "discard", x: "exhaust", h: "stairs", "?": "unknown", o: "gear", q: "back" };
+const MENU_ICONS = { d: "deck", v: "relic", i: "potion", m: "map", l: "log", a: "draw", s: "discard", x: "exhaust", h: "stairs", o: "gear", q: "back" };
 // The game's own art for an entry (the relics tile shows your first relic).
 const MENU_ART = { d: "top_bar_deck", i: "potion_icon", m: "top_bar_map", a: "draw_pile", s: "discard_pile", x: "exhaust_pile", h: "map_monster", o: "top_bar_settings", q: "back_button" };
 const FIGHT_KEYS = "lsax";
@@ -2181,7 +2226,7 @@ function menuSheet(rows) {
   for (const r of rows) {
     const k = r.key?.Char;
     // Deck and Map are the top bar's buttons; the menu keeps what the bar lacks.
-    if (!k || k === "d" || k === "m") continue;
+    if (!k || k === "d" || k === "m" || k === "?") continue;
     const label = plain(r.label).replace("Quit (the run is saved)", "Save & quit");
     const pic = k === "v" ? artImg("relic", view.screen.top.relics?.[0]?.art, "uiic") : MENU_ART[k] ? uiIcon(MENU_ART[k], MENU_ICONS[k]) : null;
     // The map's skull is a small drawing in a large frame: it is scaled to the other tiles' size.
@@ -2240,7 +2285,52 @@ function potionSheet(slot, shown = false) {
   };
 }
 
-// The game's explanations of a text's lit words (Doom, Block, Vulnerable) and of `names`.
+// A room kind's (or any term's) explanation: a mouse's hover tip and a long-press sheet on `e`. Put it
+// before `e`'s own click listener, so a hold swallows that click.
+function kindTip(e, names) {
+  attachTip(e, () => ({ title: "", nodes: [glossary([], names)].filter(Boolean) }));
+  holdTerm(e, names);
+  return e;
+}
+const readTerm = (names) => {
+  const g = glossary([], names);
+  if (g) showLocal({ title: "", body: () => [g] });
+};
+
+// A long-press on `e` (its tap stays its own) reads the game's explanation of `names` in a sheet.
+function holdTerm(e, names) {
+  hold(e, () => readTerm(names));
+}
+
+// The game's explanation of `names` (Energy, Draw pile, an orb): a mouse's hover tip, and for a touch a sheet on tap.
+function termTip(e, names, extra = null) {
+  const make = () => ({ title: "", nodes: [extra?.(), glossary([], names)].filter(Boolean) });
+  attachTip(e, make);
+  return tap(e, () => {
+    const body = make().nodes;
+    if (body.length) showLocal({ title: "", body: () => body });
+  });
+}
+
+// Every card by lower-case name, from the card database (built once): a lit word that is a card's
+// name (Shiv, Soul, Giant Rock, Strikes) reads as that card.
+let cardNames = null;
+function cardByName(word) {
+  if (!cardNames) {
+    cardNames = new Map();
+    try {
+      for (const c of JSON.parse(library_part("cards", 0, JSON.parse(library_counts())[0]))) {
+        const k = c.now.name.toLowerCase();
+        if (!cardNames.has(k)) cardNames.set(k, c.now);
+      }
+    } catch {}
+  }
+  const w = word.trim().toLowerCase().replace(/[^a-z0-9' ]+$/g, "");
+  return cardNames.get(w) ?? cardNames.get(w.replace(/'?s$/, "")) ?? null;
+}
+
+// The game's explanations of a text's lit words (Doom, Block, Vulnerable) and of `names`, and the
+// card behind each lit word that names one (a tap opens it as a card).
 function glossary(texts, names = []) {
   const words = new Set(names);
   for (const r of texts)
@@ -2248,8 +2338,22 @@ function glossary(texts, names = []) {
       if (!["Body", "Plain", "Muted"].includes(sp.role) && /[A-Za-z]/.test(sp.text)) words.add(sp.text.trim());
   if (!words.size) return null;
   const terms = JSON.parse(game ? game.glossary(JSON.stringify([...words])) : library_glossary(JSON.stringify([...words])));
-  if (!terms.length) return null;
-  return el("div", "terms", terms.map((t) => el("div", "term", el("b", null, t.title), el("p", null, rich(t.text)))));
+  const cards = [];
+  for (const w of words) {
+    const c = cardByName(w);
+    if (c && !cards.includes(c)) cards.push(c);
+  }
+  if (!terms.length && !cards.length) return null;
+  return el(
+    "div",
+    "terms",
+    terms.map((t) => el("div", "term", el("b", null, t.title), el("p", null, rich(t.text)))),
+    cards.map((c) => {
+      const cost = c.cost && c.cost !== "—" ? ` · ${c.cost.replace("·s", " ★")} energy` : "";
+      const row = el("button", "term cardref", el("b", null, c.name), el("small", null, ` ${c.kind}${cost}`), el("p", null, rich(c.effect?.length ? c.effect : c.text)));
+      return tap(row, () => showLocal(cardSheet({ id: 0, label: [], detail: [], card: c })));
+    }),
+  );
 }
 
 // The sheet's title is the card's name, unless the game's card, large, says it already.
@@ -2345,14 +2449,18 @@ function settingsSheet() {
         prefs.sound ? segment("volume", [["low", "Low"], ["mid", "Medium"], ["high", "High"]], () => sound("gold")) : null,
         el("h3", null, "Motion"),
         segment("motion", [["auto", "Phone"], ["full", "Full"], ["reduced", "Reduced"]]),
+        el("h3", null, "Animation speed"),
+        segment("speed", [["normal", "Normal"], ["fast", "Fast"]]),
         el("h3", null, "Text size"),
         segment("text", [["normal", "Normal"], ["large", "Large"]]),
         el("h3", null, "End Turn"),
         segment("confirmEnd", [[false, "One tap"], [true, "Ask if energy is left"]]),
         ...(window.sts2platform?.settings(segment) ?? []),
         el("h3", null, "Bot hints"),
-        segment("hints", [["manual", "Hint button"], ["always", "Always show"]], () => runHooks("screen")),
-        el("p", "note", "Always show outlines the bot's move in gold at every decision."),
+        segment("hints", [["manual", "Off"], ["always", "On"]], () => runHooks("screen")),
+        el("p", "note", "On glows the bot's pick at every decision. The ✦ toggle in the top bar does the same."),
+        // The combat net's pause before each move (bot.js), where its weights are served.
+        ...(document.getElementById("netbot") ? [el("h3", null, "Net speed"), segment("netSpeed", [["slow", "Slow"], ["normal", "Normal"], ["fast", "Fast"]]), el("h3", null, "Net potions"), segment("netPotions", [["save", "Save for elites & bosses"], ["any", "Any fight"]])] : []),
       ];
       if (game && view) out.push(el("h3", null, "This run"), el("p", "note runinfo", `Seed ${view.save.seed} · Ascension ${view.save.ascension}`), ...modifierNotes(view.run?.modifiers), shareThisRun(view.save));
       out.push(el("h3", null, "Bug report"), bugButton());
@@ -2389,7 +2497,7 @@ function bugButton() {
 // The start screen's ascension and seed for the next run.
 const startOpts = { practice: new URLSearchParams(location.search).has("practice"), asc: JSON.parse(localStorage.getItem("sts2-last") ?? "null")?.asc ?? 0, seed: new URLSearchParams(location.search).get("seed") ?? "" };
 // The game's ascension text (null without an import): the picker shows the level's title in
-// bold gold over its description; the levels stack, so a tap lists every one in force.
+// bold gold over its description.
 let ascText = null;
 const ascKey = (n, f) => ascText?.[`LEVEL_${String(n).padStart(2, "0")}.${f}`];
 const ascRich = (t) =>
@@ -2399,26 +2507,16 @@ const ascRich = (t) =>
       const m = /^\[(gold|blue|red|green)\]([\s\S]*)\[\/\1\]$/.exec(x);
       return m ? el("span", `rt-${m[1]}`, modText(m[2])) : modText(x) ? document.createTextNode(x.replace(/\[\/?[a-z_]+\]/gi, "")) : "";
     });
-function ascensionSheet(n) {
-  return {
-    title: "Ascension",
-    body: () =>
-      Array.from({ length: n }, (_, i) => i + 1).map((i) => el("div", "tip asclvl", el("b", null, `${i} · ${ascKey(i, "title") ?? ""}`), el("p", null, ...ascRich(ascKey(i, "description"))))),
-  };
-}
 function runOpts(withPractice = true) {
   const ascVal = el("b", null, `${startOpts.asc}`);
-  const info = el("button", "ascinfo");
+  const info = el("div", "ascinfo");
   const paintAsc = () => {
     const n = startOpts.asc;
     const title = ascKey(n, "title");
     info.hidden = !title;
-    info.disabled = n === 0;
     info.dataset.level = `${n}`;
-    info.replaceChildren(el("span", "asctext", el("b", "asctitle", title ?? ""), " ", el("span", "ascdesc", ...ascRich(ascKey(n, "description")))), n > 0 ? el("i", "asclist", `1–${n}`) : "");
-    info.setAttribute("aria-label", n > 0 ? `Ascension ${n}: ${title}. Show levels 1 to ${n}` : `Ascension 0: ${title}`);
+    info.replaceChildren(el("span", "asctext", el("b", "asctitle", title ?? ""), " ", el("span", "ascdesc", ...ascRich(ascKey(n, "description")))));
   };
-  tap(info, () => startOpts.asc > 0 && showLocal(ascensionSheet(startOpts.asc)));
   const step = (d) => {
     startOpts.asc = Math.max(0, Math.min(10, startOpts.asc + d));
     ascVal.textContent = `${startOpts.asc}`;
@@ -2462,23 +2560,6 @@ function tutorialSheet() {
   };
 }
 
-function helpSheet() {
-  const tips = [
-    ["Play a card", "Drag it up onto a lit enemy, or anywhere above the hand if it needs no target; drag it back down to keep it. Or tap it, then tap an enemy."],
-    ["Read anything", "Hold a card for its full text and keywords. Tap an enemy, yourself or Osty for powers and the next move."],
-    ["Read the fight", phone() ? "Enemy cards show their next move." : "The red line under the enemies is what their turn does to you. Enemy cards show their next move."],
-    ["Previews", "While a card waits for its target, each enemy shows its HP after the hit."],
-    ["Potions", "Tap one in the belt under the top bar to read it, use it or throw it away."],
-    ["Piles and lists", "Tap the draw and discard counts by End Turn. The deck, map and menu are at the top right."],
-    ["Back", "The phone's Back closes a sheet or cancels an aimed card; it opens the menu otherwise."],
-    ["Saving", "The run saves after every tap. Continue on the start screen picks it up."],
-  ];
-  return {
-    title: "How to play",
-    body: () => tips.map(([h, t]) => el("div", "tip", el("b", null, h), el("p", null, t))),
-  };
-}
-
 // -- feedback --
 
 let endingTurn = false;
@@ -2489,9 +2570,9 @@ function banner(big, small, cls = "", ms = 1300) {
   b.className = "";
   void b.offsetWidth;
   b.className = `show ${cls}`;
-  b.style.setProperty("--ms", `${ms}ms`);
+  b.style.setProperty("--ms", `${K(ms)}ms`);
   b.replaceChildren(el("b", null, big), small ? el("small", null, small) : null);
-  if (!window.sts2?.pinBanner) bannerTimer = setTimeout(() => (b.className = ""), ms);
+  if (!window.sts2?.pinBanner) bannerTimer = setTimeout(() => (b.className = ""), K(ms));
 }
 
 // The run's end: a full-screen beat (Defeat or Victory, what ended it), then the end screen.
@@ -2515,7 +2596,7 @@ function endMoment() {
   setTrack(null);
   const done = () => {
     m.classList.add("out");
-    setTimeout(() => m.remove(), 300);
+    setTimeout(() => m.remove(), K(300));
   };
   tap(m, done);
   document.body.append(m);
@@ -2550,7 +2631,7 @@ function turnMoment() {
   const now = view.screen.top?.hp ?? 0;
   const lost = was - now;
   if (lost > 0) buzz([30, 50, 30]);
-  setTimeout(() => sound("turn"), 350);
+  setTimeout(() => sound("turn"), K(350));
   dealHand();
 }
 
@@ -2610,7 +2691,7 @@ function sounds(played) {
   const blocked = view.fight && before.fight && (you(view)?.block ?? 0) > (you(before)?.block ?? 0);
   const gold = (view.screen.top?.gold ?? 0) > (before.screen.top?.gold ?? 0);
   if (playedCard) sound("play", { who: character(view.save.character).name, attack: hit });
-  const later = (name, ms) => setTimeout(() => sound(name), ms);
+  const later = (name, ms) => setTimeout(() => sound(name), K(ms));
   if (hit && !played) later("hit", 90);
   if (hurt && !played) later("hurt", hit ? 260 : 60);
   if (blocked && !played) later("block", 70);
@@ -2810,7 +2891,6 @@ function showStart(error = null) {
       "foot",
       ex.share,
       tap(el("button", "chipbtn", icon("gear"), "Settings"), () => showLocal(settingsSheet())),
-      tap(el("button", "chipbtn", icon("unknown"), "How to play"), () => showLocal(helpSheet())),
     ),
   );
   const right = el("div", "scol r", el("h3", save ? null : "pickhead", save ? "Or a new run" : "Choose your hero"), chips, hero, runOpts(), el("div", "go", go));
@@ -2826,6 +2906,7 @@ function showStart(error = null) {
 function applyPrefs() {
   applyTheme();
   document.body.classList.toggle("still", reduced());
+  document.documentElement.dataset.speed = prefs.speed;
   document.documentElement.dataset.text = prefs.text;
   setSound(prefs.sound, prefs.volume);
 }
@@ -2923,7 +3004,7 @@ async function main() {
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
   await init();
   initHover({ el });
-  initExtras({ daily_run, el, tap, rich, plain, icon, character, showLocal, closeSheet, startRun, cardTile, cardSheet, textSheet, artImg, characters: CHARACTERS, glossary, library: { counts: () => JSON.parse(library_counts()), part: (k, f, n) => JSON.parse(library_part(k, f, n)) }, game: () => game, say: (m) => m && toast([{ role: "Plain", bold: false, text: m }]) });
+  initExtras({ el, tap, rich, plain, icon, character, showLocal, closeSheet, startRun, cardTile, cardSheet, textSheet, artImg, characters: CHARACTERS, glossary, library: { counts: () => JSON.parse(library_counts()), part: (k, f, n) => JSON.parse(library_part(k, f, n)) }, game: () => game, say: (m) => m && toast([{ role: "Plain", bold: false, text: m }]) });
   const shared = q.has("proof") ? null : takeSharedLink();
   if (shared) {
     startOpts.seed = shared.seed ?? startOpts.seed;
@@ -2972,7 +3053,6 @@ async function main() {
     showLocal,
     potionSheet,
     settingsSheet,
-    helpSheet,
     tutorialSheet,
     cardSheet,
     creatureSheet,
@@ -2982,8 +3062,14 @@ async function main() {
     debug: (json) => { const r = game.debug(json); apply(game.view()); return r; },
     hook: (f) => hooks.push(f),
     pref: (k) => prefs[k],
+    setPref: (k, v) => {
+      prefs[k] = v;
+      savePrefs();
+    },
     // How the run's action `index` is tapped on the screen as it is (bot.js lights it).
     taps: (index) => JSON.parse(game?.taps(index) ?? "null"),
+    // Plays the run's action `index` when it is a fight's move in a fight (the combat net, bot.js).
+    play: (index) => game && apply(game.play(index)),
     // Back to the player's own run (or the start screen) after the page drew another view.
     resume: () => (game ? apply(game.view()) : showStart()),
     // Another moment of a run, drawn with no entrance, sound or moment; `unpeek` puts back what was there (review.js).

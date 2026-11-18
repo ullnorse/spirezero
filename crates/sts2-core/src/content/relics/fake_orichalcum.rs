@@ -13,7 +13,7 @@ const BLOCK: i32 = 3;
 pub struct FakeOrichalcum;
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut orichalcum::Data {
-    let RelicData::Orichalcum(data) = &mut s.relic_mut(me).data else {
+    let RelicData::Orichalcum(data) = s.relic_data_mut(me) else {
         unreachable!("a FakeOrichalcum has Orichalcum data");
     };
     data

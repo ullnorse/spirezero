@@ -153,6 +153,41 @@ impl Monster {
     }
 }
 
+/// The move each monster of `state` will have after the one it shows now.
+///
+/// For every creature (by index) the `MoveState.Id` that the roll after its current move would
+/// reach, or `None` for a creature without a monster. A read-only peek for the privileged
+/// observation: the walk runs on copies of the machines and of the `MonsterAi` stream, creature
+/// by creature in index order (the order of the game's rolls), and sees the state as it is now
+/// (a condition that reads the state after the current move is performed may differ).
+///
+/// # Panics
+/// If the fight has more than `u32::MAX` creatures.
+pub fn following_moves(state: &CombatState, out: &mut Vec<Option<&'static str>>) {
+    out.clear();
+    let mut rng = state.rng[RunRngType::MonsterAi].clone();
+    for (index, c) in state.creatures.iter().enumerate() {
+        let Some(m) = &c.monster else {
+            out.push(None);
+            continue;
+        };
+        let table = m.kind.moves();
+        let mut machine = m.machine;
+        machine.performed_first_move = true;
+        if let Some(f) = machine.forced.as_mut() {
+            f.performed_at_least_once = true;
+        }
+        let id = if machine.rolls(table) {
+            let owner = CreatureId(u32::try_from(index).expect("few creatures"));
+            let next = machine.next_move(table, state, owner, &mut rng);
+            table.states[next].id()
+        } else {
+            machine.current_id(table)
+        };
+        out.push(Some(id));
+    }
+}
+
 /// The monster on creature `id`.
 fn monster(state: &CombatState, id: CreatureId) -> &Monster {
     state

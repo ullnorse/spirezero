@@ -23,7 +23,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::Kunai(data) = &mut s.relic_mut(me).data else {
+    let RelicData::Kunai(data) = s.relic_data_mut(me) else {
         unreachable!("a Kunai has Kunai data");
     };
     data

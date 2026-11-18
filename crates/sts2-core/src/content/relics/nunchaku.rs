@@ -41,7 +41,7 @@ impl Hooks for Nunchaku {
         if eng.s.card(play.card).card_type() != CardType::Attack {
             return Ok(());
         }
-        let RelicData::Nunchaku(data) = &mut eng.s.relic_mut(me).data else {
+        let RelicData::Nunchaku(data) = eng.s.relic_data_mut(me) else {
             unreachable!("a Nunchaku has Nunchaku data");
         };
         data.attacks_played += 1;

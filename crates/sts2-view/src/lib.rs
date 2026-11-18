@@ -10,6 +10,7 @@
 pub mod combat;
 pub mod describe;
 pub mod details;
+pub mod grants;
 pub mod last;
 pub mod launch;
 pub mod menu;

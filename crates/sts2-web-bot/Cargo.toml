@@ -16,6 +16,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 sts2-core = { path = "../sts2-core" }
 sts2-diff = { path = "../sts2-diff" }
+sts2-rl = { path = "../sts2-rl" }
 sts2-view = { path = "../sts2-view" }
 sts2-web = { path = "../sts2-web" }
 serde_json = "1"

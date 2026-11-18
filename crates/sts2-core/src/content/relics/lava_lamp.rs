@@ -54,7 +54,7 @@ impl Hooks for LavaLamp {
     type Me = RelicId;
 
     fn after_room_entered(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        eng.s.relic_mut(me).data = RelicData::LavaLamp(Data::default());
+        *eng.s.relic_data_mut(me) = RelicData::LavaLamp(Data::default());
         Ok(())
     }
 
@@ -63,7 +63,7 @@ impl Hooks for LavaLamp {
             && hit.result.unblocked > 0
             && !hit.props.has(ValueProps::UNBLOCKABLE)
         {
-            eng.s.relic_mut(me).data = RelicData::LavaLamp(Data {
+            *eng.s.relic_data_mut(me) = RelicData::LavaLamp(Data {
                 took_damage_this_combat: true,
             });
         }

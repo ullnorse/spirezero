@@ -90,6 +90,13 @@ macro_rules! clone_field_from {
     ($dst:expr, $src:expr, copy) => {
         $crate::copy_vec_from(&mut $dst, $src)
     };
+    // A `Copy` field by assignment: `Option::clone_from` branches on both sides.
+    ($dst:expr, $src:expr, set) => {
+        $dst = *$src
+    };
+    ($dst:expr, $src:expr, list) => {
+        $crate::combat::inline_list::copy_list_from(&mut $dst, $src)
+    };
 }
 
 /// `dst.clone_from(src)` for a list of `Copy` items, without the `memcpy` call when `src` is

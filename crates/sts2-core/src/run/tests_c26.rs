@@ -352,7 +352,20 @@ fn event_and_ancient_cards_transform_into_colorless_cards() {
             "{id}"
         );
     }
-    assert_eq!(cards::transformation_options(RunCard::new("INJURY")), None);
+}
+
+/// RLN6: a Curse transforms into another card of the curse pool, any rarity and generatable or
+/// not (`AscendersBane` included out of combat), never itself; a card of no pool still has none.
+#[test]
+fn a_curse_transforms_into_the_other_curses() {
+    let options = cards::transformation_options(RunCard::new("INJURY")).expect("the curse pool");
+    assert_eq!(options.len(), 17);
+    assert!(options.contains(&"ASCENDERS_BANE") && options.contains(&"CLUMSY"));
+    assert!(!options.contains(&"INJURY"));
+    assert_eq!(
+        cards::transformation_options(RunCard::new("NOT_A_CARD")),
+        None
+    );
 }
 
 /// `T6S0` on a rewards screen of `rewards` after a fight in `room`.

@@ -73,14 +73,13 @@ pub fn build(run: &Run, describer: &Describer, waiting: Option<Waiting>) -> TopB
 fn relics(run: &Run, describer: &Describer) -> Vec<RelicChip> {
     let combat = run.combat().map(sts2_core::Combat::state);
     let owned = &run.state().relics;
-    let in_fight = combat
-        .map(|c| &c.player.relics)
-        .filter(|r| r.len() == owned.len());
+    let in_fight = combat.filter(|c| c.player.relics.len() == owned.len());
     owned
         .iter()
         .enumerate()
         .map(|(i, r)| {
-            let data = in_fight.map_or(r.data, |fight| fight[i].data);
+            let data =
+                in_fight.map_or(r.data, |fight| *fight.relic_data(fight.player.relics[i].id));
             RelicChip {
                 name: r.kind.name().to_owned(),
                 art: r.kind.id().to_owned(),

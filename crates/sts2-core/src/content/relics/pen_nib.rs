@@ -22,7 +22,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::PenNib(data) = &mut s.relic_mut(me).data else {
+    let RelicData::PenNib(data) = s.relic_data_mut(me) else {
         unreachable!("a PenNib has PenNib data");
     };
     data
@@ -57,7 +57,7 @@ impl Hooks for PenNib {
         {
             return Decimal::ONE;
         }
-        let RelicData::PenNib(data) = s.relic(me).data else {
+        let RelicData::PenNib(data) = *s.relic_data(me) else {
             unreachable!("a PenNib has PenNib data");
         };
         let double = data.attack_to_double.map_or_else(

@@ -16,7 +16,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::DemonTongue(data) = &mut s.relic_mut(me).data else {
+    let RelicData::DemonTongue(data) = s.relic_data_mut(me) else {
         unreachable!("a DemonTongue has DemonTongue data");
     };
     data

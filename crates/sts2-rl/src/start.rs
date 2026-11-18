@@ -390,6 +390,8 @@ impl StartRecord {
             map_coord: self.map_coord,
             record_events: false,
             modifiers: sts2_core::run::modifiers::CombatModifiers::default(),
+            // Training plays the real game.
+            test_mode: false,
         };
         // The room type of the encounter's list (Monster, Elite or Boss).
         config.with_encounter(self.encounter)

@@ -23,7 +23,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::BrilliantScarf(data) = &mut s.relic_mut(me).data else {
+    let RelicData::BrilliantScarf(data) = s.relic_data_mut(me) else {
         unreachable!("a BrilliantScarf has BrilliantScarf data");
     };
     data
@@ -31,7 +31,7 @@ fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
 
 /// `ShouldModifyCost`.
 fn should_modify_cost(s: &CombatState, me: RelicId, card: CardId) -> bool {
-    let RelicData::BrilliantScarf(data) = s.relic(me).data else {
+    let RelicData::BrilliantScarf(data) = *s.relic_data(me) else {
         unreachable!("a BrilliantScarf has BrilliantScarf data");
     };
     s.in_progress

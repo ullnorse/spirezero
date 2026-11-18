@@ -125,13 +125,13 @@ fn pollinous_core_draws_two_more_on_its_fourth_turn() {
         melted: false,
     });
     assert_eq!(c.state.player.hand.len(), 7);
-    let RelicData::PollinousCore(data) = c.state.relic(RelicId(1)).data else {
+    let RelicData::PollinousCore(data) = *c.state.relic_data(RelicId(1)) else {
         panic!("not a PollinousCore");
     };
     assert_eq!(data.turns_seen, 0);
     let c = with_relic(OwnedRelic::from(RelicKind::PollinousCore));
     assert_eq!(c.state.player.hand.len(), 5);
-    let RelicData::PollinousCore(data) = c.state.relic(RelicId(1)).data else {
+    let RelicData::PollinousCore(data) = *c.state.relic_data(RelicId(1)) else {
         panic!("not a PollinousCore");
     };
     assert_eq!(data.turns_seen, 1);

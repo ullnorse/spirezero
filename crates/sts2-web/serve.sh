@@ -1,6 +1,6 @@
 #!/bin/sh
 # Serves www/ (or $WWW, e.g. a release from deploy.sh) gzipped (serve.py) on the LAN (port $PORT, 8765 by default) with the game text and art linked in at
-# www/text, www/art and www/audio (`crates/sts2-web/tools/audio_import.py`) from ~/.cache/spirezero-data (`cargo xtask art-import`; git-ignored, never committed), and
+# www/text, www/art, www/audio (`crates/sts2-web/tools/audio_import.py`) and www/net (the combat net's weights, net/cb3.bin) from ~/.cache/spirezero-data (`cargo xtask art-import`; git-ignored, never committed), and
 # prints the LAN URL with a QR code (qr.py) for the phone's camera.
 set -eu
 cachedir() { n="$HOME/.cache/spirezero-$1" o="$HOME/.cache/spirebot-$1"; if [ ! -e "$n" ] && [ -d "$o" ]; then echo "$o"; else echo "$n"; fi; }  # old name while only it exists
@@ -11,6 +11,9 @@ art="${STS2_ART:-$(cachedir data)/art}"
 if [ -d "$art" ] && [ ! -e "$www/art" ]; then ln -s "$art" "$www/art"; fi
 audio="${STS2_AUDIO:-$(cachedir data)/audio}"
 if [ -d "$audio" ] && [ ! -e "$www/audio" ]; then ln -s "$audio" "$www/audio"; fi
+# The CB3 combat net's weights (WEB82, ~29 MB, made by `python/web82_export.py export`): never committed.
+net="${STS2_NET:-$(cachedir data)/net}"
+if [ -d "$net" ] && [ ! -e "$www/net" ]; then ln -s "$net" "$www/net"; fi
 [ -f "$www/pkg/sts2_web_bg.wasm" ] || echo "no www/pkg yet: run crates/sts2-web/build.sh first" >&2
 # The LAN address: Linux's `hostname -I`, else macOS's Wi-Fi (en0) or wired (en1) one.
 ip="$(hostname -I 2>/dev/null | cut -d' ' -f1)"

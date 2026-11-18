@@ -283,7 +283,17 @@ pub fn point_type(state: &RunState, kind: MapPointType) -> String {
 /// An event option's `TextKey` (`EVENT.pages.PAGE.options.OPTION`) as readable text.
 #[must_use]
 pub fn event_option(text_key: &str) -> String {
-    title_case(text_key.rsplit('.').next().unwrap_or(text_key))
+    // The doll room's keys are the relic's own title (`Mr. Struggles`), not a path.
+    text_key.rsplit_once(".options.").map_or_else(
+        || {
+            if text_key.chars().any(char::is_lowercase) {
+                text_key.trim().to_owned()
+            } else {
+                title_case(text_key)
+            }
+        },
+        |(_, option)| title_case(option),
+    )
 }
 
 /// An event page's name from an option's `TextKey`, if it has one.
@@ -328,6 +338,11 @@ mod tests {
         assert_eq!(verb("You", "hit"), "hit");
         assert_eq!(verb("Jaw Worm", "hit"), "hits");
         assert_eq!(verb("Jaw Worm", "die"), "dies");
+        assert_eq!(event_option("Mr. Struggles"), "Mr. Struggles");
+        assert_eq!(
+            event_option("X.pages.INITIAL.options.TAKE_SOME_TIME"),
+            "Take Some Time"
+        );
         assert_eq!(monster_move("OIL_SPRAY_MOVE"), "Oil Spray");
         assert_eq!(monster_move("SLAM"), "Slam");
     }

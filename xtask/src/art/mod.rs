@@ -284,6 +284,7 @@ pub fn run(args: &[String]) -> Result<Vec<String>, String> {
     if wanted("ui") {
         ui::pieces(&mut pck, &mut pictures, &mut notes);
         ui::tinted(&mut pck, &mut pictures, &mut notes);
+        ui::boss_icons(&mut pck, &mut pictures, &mut notes);
     }
     let bundle_size = write(&options.out, &pictures)?;
     if wanted("ui") {

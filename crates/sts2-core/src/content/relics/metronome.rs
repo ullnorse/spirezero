@@ -37,12 +37,12 @@ impl Hooks for Metronome {
 
     /// `AfterRoomEntered` of a `CombatRoom` (the engine only dispatches it for fights).
     fn after_room_entered(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        eng.s.relic_mut(me).data = RelicData::Metronome(Data::default());
+        *eng.s.relic_data_mut(me) = RelicData::Metronome(Data::default());
         Ok(())
     }
 
     fn after_orb_channeled(&self, eng: &mut Engine<'_>, me: RelicId, _orb: Orb) -> Flow {
-        let RelicData::Metronome(data) = &mut eng.s.relic_mut(me).data else {
+        let RelicData::Metronome(data) = eng.s.relic_data_mut(me) else {
             unreachable!("a Metronome has Metronome data");
         };
         data.orbs_channeled += 1;
@@ -61,7 +61,7 @@ impl Hooks for Metronome {
     }
 
     fn after_combat_end(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        eng.s.relic_mut(me).data = RelicData::Metronome(Data::default());
+        *eng.s.relic_data_mut(me) = RelicData::Metronome(Data::default());
         Ok(())
     }
 }

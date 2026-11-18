@@ -259,6 +259,47 @@ impl RunState {
         Ok(())
     }
 
+    /// What the unvisited `?` point `coord` would become if it were entered next: the room type
+    /// its roll reaches on a copy of the current odds and of `rng`'s `UnknownMapPoint` stream
+    /// (the run's streams, see [`super::Run::rng`]), with the shop blacklist and the room-type
+    /// hooks. A read-only peek (the real roll also depends on the order the `?` points are
+    /// entered in); `None` if `coord` is not a `?` point.
+    #[must_use]
+    pub fn peek_unknown_room(&self, rng: &RunRngSet, coord: MapCoord) -> Option<RoomType> {
+        let point = self.map.point(coord)?;
+        if point.kind != MapPointType::Unknown {
+            return None;
+        }
+        let after_shop = self
+            .history
+            .last()
+            .is_some_and(|h| h.room_type == Some(RoomType::Shop));
+        let before_shops = !point.children.is_empty()
+            && point.children.iter().all(|c| {
+                self.map
+                    .point(c)
+                    .is_some_and(|p| p.kind == MapPointType::Shop)
+            });
+        let mut types = UnknownMapPointOdds::room_types();
+        if after_shop || before_shops {
+            types.retain(|&t| t != RoomType::Shop);
+        }
+        hooks::modify_unknown_map_point_room_types(self, &mut types);
+        let mut odds = self.unknown_odds;
+        let mut stream = rng[crate::rng::RunRngType::UnknownMapPoint].clone();
+        Some(odds.roll(&types, &mut stream))
+    }
+
+    /// The next act's map as [`RunState::generate_map`] makes it from `rng`, without the map
+    /// modifiers' changes; `None` in the last act. A read-only peek.
+    #[must_use]
+    pub fn peek_next_act_map(&self, rng: &RunRngSet) -> Option<ActMap> {
+        let next = self.act_index + 1;
+        (next < self.acts.len())
+            .then(|| ActMap::generate(rng, next, self.ascension).ok())
+            .flatten()
+    }
+
     /// `CurrentMapCoord`.
     #[must_use]
     pub fn coord(&self) -> Option<MapCoord> {

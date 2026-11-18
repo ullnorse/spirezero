@@ -29,7 +29,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::RainbowRing(data) = &mut s.relic_mut(me).data else {
+    let RelicData::RainbowRing(data) = s.relic_data_mut(me) else {
         unreachable!("a RainbowRing has RainbowRing data");
     };
     data

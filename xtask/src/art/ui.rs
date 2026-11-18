@@ -15,7 +15,7 @@ use image::{RgbaImage, imageops};
 
 use super::godot::Resource;
 use super::pck::Pck;
-use super::{Picture, fit, has_extension, stem, texture};
+use super::{Picture, fit, has_extension, spine_picture, stem, texture};
 
 /// Atlas sprites: the directory, and whether its subdirectories count.
 const SPRITES: &[(&str, bool)] = &[
@@ -38,6 +38,9 @@ const IMAGES: &[&str] = &[
     "images/ui/reward_screen/",
     "images/ui/rest_site/",
     "images/packed/sprite_fonts/",
+    // Every boss's still (`queen_boss`): the map's icon for the bosses whose map node is only an
+    // animation (Ceremonial Beast, Queen, The Insatiable).
+    "images/ui/run_history/",
 ];
 
 /// The fonts, by their file stem under `fonts/`.
@@ -113,6 +116,39 @@ pub(super) fn pieces(pck: &mut Pck, pictures: &mut Vec<Picture>, notes: &mut Vec
                 Ok(image) => add(&path, image, pictures),
                 Err(e) => notes.push(format!("ui: {path}: {e}")),
             }
+        }
+    }
+}
+
+/// The bosses whose map node is only a Spine animation (`animations/map/<boss>/<boss>_node`):
+/// there is no `images/map/placeholder/<boss>_icon.png` for them.
+const BOSS_NODES: &[&str] = &["ceremonial_beast_boss", "queen_boss", "the_insatiable_boss"];
+
+/// `<boss>_icon` for each animated boss node: its skeleton in the setup pose as a white
+/// silhouette (the map tints it with ink, like the placeholder icons). The node's texture is
+/// colour-coded: white backing (the outline the game draws round it), blue fill, red details;
+/// the icon keeps what has no green or purple, so the line work shows through as holes like
+/// the placeholders'.
+pub(super) fn boss_icons(pck: &mut Pck, pictures: &mut Vec<Picture>, notes: &mut Vec<String>) {
+    for boss in BOSS_NODES {
+        let data = format!("animations/map/{boss}/{boss}_node_skel_data.tres");
+        match spine_picture(pck, &data, boss, None, 256, false) {
+            Ok(mut image) => {
+                for px in image.pixels_mut() {
+                    // The white backing has green, which the blue and red layers lack; where
+                    // blue meets red (the red layer's edge: the drawing's lines) it is purple.
+                    let [r, g, b, a] = px.0.map(u32::from);
+                    let lines = 255 - (2 * r.min(b)).min(255);
+                    let ink = a * (255 - g) / 255 * lines / 255;
+                    *px = image::Rgba([255, 255, 255, ink as u8]);
+                }
+                pictures.push(Picture {
+                    kind: "ui",
+                    id: format!("{boss}_icon"),
+                    image,
+                });
+            }
+            Err(e) => notes.push(format!("ui: {boss}_icon: {e}")),
         }
     }
 }

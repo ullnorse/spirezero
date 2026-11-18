@@ -441,15 +441,15 @@ fn deck_commands() {
         CardRarity::Common | CardRarity::Uncommon | CardRarity::Rare
     ));
     assert_eq!(rng.counter(), 1);
-    // A curse's pool is not modeled.
-    s.add_card(RunCard::new("POOR_SLEEP"));
-    assert_eq!(
-        s.transform_to_random(10, &mut rng),
-        Err(RunError::UnsupportedCard("POOR_SLEEP"))
-    );
     // Removal lists curses first; transformation skips nothing here.
+    s.add_card(RunCard::new("POOR_SLEEP"));
     assert_eq!(s.removable_cards()[0], 10);
     assert_eq!(s.transformable_cards().len(), 11);
+    // RLN6: a curse transforms into another card of the curse pool, one draw.
+    assert_eq!(s.transform_to_random(10, &mut rng), Ok(()));
+    assert_eq!(rng.counter(), 2);
+    assert_eq!(s.deck.len(), 11);
+    assert!(!s.deck.iter().any(|c| c.id == "POOR_SLEEP"));
     // Upgrade, downgrade.
     s.deck[0].upgrade();
     s.downgrade(0);
@@ -964,7 +964,7 @@ fn winged_boots_count_a_free_travel_into_a_fight() {
     let combat = run.combat().expect("in combat");
     let boots = combat.state().player.relics.last().expect("the boots");
     assert!(matches!(
-        boots.data,
+        *combat.state().relic_data(boots.id),
         RelicData::WingedBoots(d) if d.times_used == 1
     ));
 }

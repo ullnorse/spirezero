@@ -21,6 +21,7 @@ use sts2_ffi::{
     sts2_run_envs_won_ptr,
 };
 use sts2_rl::action::nth_set;
+use sts2_rl::run_obs::V1_BYTES;
 use sts2_rl::{RUN_MASK_WORDS, RUN_OBS_BYTES};
 
 /// `SplitMix64`'s next value.
@@ -63,6 +64,17 @@ fn main() {
         ascension: 0,
         combat,
         intents: 1,
+        dedupe: 0,
+        turn_cap: 0,
+        decision_cap: 0,
+        events: 0,
+        counters: 0,
+        priv_obs: 0,
+        obs_v2: 0,
+        obs_full: 0,
+        discard_potion: 0,
+        plan_depth: 0,
+        obs_events: 0,
     };
     // SAFETY: `config` is readable.
     let envs = unsafe { sts2_run_envs_new(envs_n, &raw const config, threads) };
@@ -111,7 +123,14 @@ fn main() {
     }
     let seconds = start.elapsed().as_secs_f64();
     // SAFETY: the obs buffer has `n × RUN_OBS_BYTES` bytes.
-    let digest = fnv(unsafe { std::slice::from_raw_parts(obs, n * RUN_OBS_BYTES) });
+    let rows = unsafe { std::slice::from_raw_parts(obs, n * RUN_OBS_BYTES) };
+    // The v1 bytes of each row, so the digest stays comparable across the v2 section (zero here).
+    let v1: Vec<u8> = rows
+        .chunks(RUN_OBS_BYTES)
+        .flat_map(|row| &row[..V1_BYTES])
+        .copied()
+        .collect();
+    let digest = fnv(&v1);
     #[expect(
         clippy::cast_precision_loss,
         clippy::float_arithmetic,

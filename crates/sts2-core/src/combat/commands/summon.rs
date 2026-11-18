@@ -2,7 +2,7 @@
 
 use crate::combat::engine::{Engine, Event, Flow};
 use crate::combat::hooks::HookSet;
-use crate::combat::state::{Creature, CreatureId, PowerKinds, Side};
+use crate::combat::state::{Creature, CreatureId, PowerKinds, Powers, Side};
 use crate::content::monsters::{Monster, MonsterKind, Osty};
 use crate::content::powers::PowerKind;
 use crate::decimal::Decimal;
@@ -53,8 +53,7 @@ impl Engine<'_> {
             hp,
             max_hp: hp,
             block: 0,
-            powers: Vec::new(),
-            removed_powers: Vec::new(),
+            powers: Powers::new(),
             power_kinds: PowerKinds::default(),
             hooks: HookSet::EMPTY,
             monster_hooks: HookSet::EMPTY,

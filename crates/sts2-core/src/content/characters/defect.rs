@@ -9,7 +9,7 @@ use crate::run::relic_bag::RelicRarity;
 
 /// `DefectCardPool.GenerateAllCards()` in declaration order. With every epoch revealed nothing is
 /// filtered by epoch.
-pub(super) const CARD_POOL: [PoolCard; 91] = [
+pub(super) static CARD_POOL: [PoolCard; 91] = [
     pool_card("ADAPTIVE_STRIKE", Rare, Attack, false),
     pool_card("ALL_FOR_ONE", Rare, Attack, false),
     pool_card("BALL_LIGHTNING", Common, Attack, false),

@@ -395,7 +395,7 @@ pub(crate) const ETERNAL_CARDS: [&str; 7] = [
 /// or the colorless pool for a Quest card or an Event, Ancient or Token one (`ByrdSwoop`,
 /// `NeowsFury`, `ToricToughness`), Common, Uncommon and Rare cards only (the original is not a
 /// Status or Curse here), minus the original. `None` for a card whose pool is not modeled
-/// (curses and status cards).
+/// (a card of no modeled pool; curses and status cards draw from their own).
 ///
 /// # Panics
 /// Never: a card with a pool entry has a character.
@@ -417,7 +417,21 @@ pub fn transformation_options(original: RunCard) -> Option<Vec<&'static str>> {
         {
             colorless()
         }
-        None => return None,
+        // A Curse or Status original draws from its own pool, any rarity (`GetFilteredTransformationOptions`
+        // skips the rarity filter for them); out of combat nothing is filtered by generatability.
+        None => {
+            use crate::content::cards::pools;
+            let own = |pool: Vec<pools::PoolCard>| {
+                pool.iter().any(|c| c.id == original.id).then(|| {
+                    pool.into_iter()
+                        .map(|c| c.id)
+                        .filter(|&id| id != original.id)
+                })
+            };
+            return own(pools::curse())
+                .or_else(|| own(pools::status()))
+                .map(Iterator::collect);
+        }
     };
     Some(
         pool.into_iter()

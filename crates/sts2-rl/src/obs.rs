@@ -29,7 +29,7 @@
 //! Values out of a field's range saturate. The modified costs are read through the combat's
 //! listener list ([`Combat::energy_cost`]); the intents come from a cache ([`crate::intents`]).
 
-use sts2_core::combat::{CombatState, DecisionRequest, Hooked, PileType};
+use sts2_core::combat::{CardId, CombatState, CreatureId, DecisionRequest, Hooked, PileType};
 use sts2_core::{Combat, Status};
 
 use crate::action::{HAND_SLOTS, OPTION_SLOTS, POTION_SLOTS};
@@ -124,6 +124,56 @@ impl<'a> Writer<'a> {
     }
 }
 
+/// What the observation shows of a combat card: its entry in the cards block
+/// ([`CARDS_AT`], [`CARD_BYTES`]). Two cards whose records are equal look the same to the agent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CardRecord {
+    kind: u16,
+    upgrade: u8,
+    pile: u8,
+    cost: i32,
+    flags: u8,
+}
+
+/// The kinds of [`CardRecord::differs`], in bit order.
+pub const RECORD_FIELDS: [&str; 5] = ["kind", "upgrade", "pile", "cost", "flags"];
+
+impl CardRecord {
+    /// The record of `card` (the cost is the modified one where it is payable, in the hand).
+    #[must_use]
+    pub fn of(h: Hooked<'_>, id: CardId) -> Self {
+        let card = h.s.card(id);
+        let pile = h.s.pile_of(id);
+        Self {
+            kind: vocab::card(card.kind),
+            upgrade: card.upgrade_level,
+            pile: pile_code(pile),
+            // The modified cost where it is payable now; elsewhere the base cost.
+            cost: if pile == Some(PileType::Hand) {
+                h.energy_cost(id)
+            } else {
+                card.energy_cost.base
+            },
+            flags: u8::from(card.exhaust_on_next_play)
+                | u8::from(card.single_turn_retain) << 1
+                | u8::from(card.single_turn_sly) << 2
+                | u8::from(card.is_dupe) << 3
+                | u8::from(card.affliction.is_some()) << 4
+                | u8::from(card.enchantment.is_some()) << 5,
+        }
+    }
+
+    /// The fields that differ from `other`, as a bitmask over [`RECORD_FIELDS`].
+    #[must_use]
+    pub fn differs(&self, other: &Self) -> u8 {
+        u8::from(self.kind != other.kind)
+            | u8::from(self.upgrade != other.upgrade) << 1
+            | u8::from(self.pile != other.pile) << 2
+            | u8::from(self.cost != other.cost) << 3
+            | u8::from(self.flags != other.flags) << 4
+    }
+}
+
 /// The pile code: 0 none, then [`PileType::LISTENER_ORDER`] from 1.
 const fn pile_code(pile: Option<PileType>) -> u8 {
     match pile {
@@ -164,10 +214,12 @@ pub fn observe_static(combat: &Combat, out: &mut [u8]) {
 }
 
 /// One env's observation writer and its intent cache.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Observer {
     intents: bool,
     intent_cache: IntentCache,
+    /// The enemy of each intent slot written by the last observation.
+    intent_owners: Vec<CreatureId>,
 }
 
 impl Observer {
@@ -177,7 +229,14 @@ impl Observer {
         Self {
             intents,
             intent_cache: IntentCache::default(),
+            intent_owners: Vec::new(),
         }
+    }
+
+    /// The enemy of each intent slot the last observation wrote, in slot order.
+    #[must_use]
+    pub fn intent_owners(&self) -> &[CreatureId] {
+        &self.intent_owners
     }
 
     /// Starts a new episode: no cached value of the last one is reused unless its whole key
@@ -224,28 +283,19 @@ impl Observer {
         }
         w.seek(CARDS_AT);
         for card in s.cards.iter().take(CARDS) {
-            let pile = s.pile_of(card.id);
-            w.u16(vocab::card(card.kind));
-            w.u8(card.upgrade_level);
-            w.u8(pile_code(pile));
-            // The modified cost where it is payable now; elsewhere the base cost.
-            w.i8(if pile == Some(PileType::Hand) {
-                h.energy_cost(card.id)
-            } else {
-                card.energy_cost.base
-            });
-            w.u8(u8::from(card.exhaust_on_next_play)
-                | u8::from(card.single_turn_retain) << 1
-                | u8::from(card.single_turn_sly) << 2
-                | u8::from(card.is_dupe) << 3
-                | u8::from(card.affliction.is_some()) << 4
-                | u8::from(card.enchantment.is_some()) << 5);
+            let r = CardRecord::of(h, card.id);
+            w.u16(r.kind);
+            w.u8(r.upgrade);
+            w.u8(r.pile);
+            w.i8(r.cost);
+            w.u8(r.flags);
         }
         w.seek(HAND_AT);
         for card in s.player.hand.iter().take(HAND) {
             w.u16(card.0);
         }
         w.seek(INTENTS_AT);
+        self.intent_owners.clear();
         if self.intents {
             self.write_intents(h, &mut w);
         }
@@ -263,6 +313,7 @@ impl Observer {
                     return;
                 }
                 slots -= 1;
+                self.intent_owners.push(enemy);
                 w.u8(intent.kind as u8 + 1);
                 w.i16(intent.attack.map_or(0, |a| a.damage));
                 w.u8(intent.attack.map_or(0, |a| a.hits));

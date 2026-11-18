@@ -57,7 +57,7 @@ impl Hooks for LizardTail {
         if creature != s.player.creature {
             return true;
         }
-        let RelicData::LizardTail(data) = s.relic(me).data else {
+        let RelicData::LizardTail(data) = *s.relic_data(me) else {
             unreachable!("a LizardTail has LizardTail data");
         };
         data.was_used
@@ -69,7 +69,7 @@ impl Hooks for LizardTail {
         me: RelicId,
         creature: CreatureId,
     ) -> Flow {
-        let RelicData::LizardTail(data) = &mut eng.s.relic_mut(me).data else {
+        let RelicData::LizardTail(data) = eng.s.relic_data_mut(me) else {
             unreachable!("a LizardTail has LizardTail data");
         };
         data.was_used = true;

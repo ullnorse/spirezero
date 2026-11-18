@@ -19,7 +19,7 @@ pub struct Data {
 }
 
 fn data_mut<'a>(eng: &'a mut Engine<'_>, me: RelicId) -> &'a mut Data {
-    let RelicData::PaelsTears(data) = &mut eng.s.relic_mut(me).data else {
+    let RelicData::PaelsTears(data) = eng.s.relic_data_mut(me) else {
         unreachable!("a PaelsTears has PaelsTears data");
     };
     data

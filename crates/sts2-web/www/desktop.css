@@ -19,9 +19,7 @@
 
   /* The bottom bar: the room's one button, centred, not a stripe across the screen. */
   #dock { max-width: none; padding: 8px var(--gut) calc(10px + env(safe-area-inset-bottom)); }
-  #dock > .primary.wide, #dock .hintrow { max-width: 440px; margin: 0 auto; }
-  #dock .hintrow .primary { flex: 1; }
-  #dock .hintrow > .hintbtn:only-child { flex: none; width: 240px; }
+  #dock > .primary.wide { max-width: 440px; margin: 0 auto; }
   #dock .primary { min-height: 52px; }
 
   /* Rooms: the title, the picture, the story and the choices in one centred column; a card grid
@@ -100,22 +98,26 @@
   .shopsec .ware .price, .shopsec .ware .ask { grid-area: price; text-align: left; }
   .shopsec .cards:has(.gamecard) { padding-bottom: 1.6em; }
 
-  /* The map: the paper tall and wide in the middle, the legend's counters at the left; the rooms on it are
-     the choice (a click, or the arrows and Enter), Hint at the bottom right. */
-  body[data-decision="map"] #screen { --mapw: clamp(620px, 52vw, 1000px); height: calc(100dvh - var(--top, 60px) - 8px); }
+  /* The map: one column. The paper in the middle, zoomed out (its width follows the window's height, so the
+     same rows show at any size), the legend's counters under it as on a phone; the rooms on it are the choice
+     (a click, or the arrows and Enter). */
+  body[data-decision="map"] #screen { height: calc(100dvh - var(--top, 60px) - 8px); }
   body[data-decision="map"] { padding-bottom: 8px; }
   #screen > .map, body[data-decision="map"] #screen > .head { max-width: none; }
   body[data-decision="map"] #screen > .head { justify-content: center; }
   body[data-decision="map"] #screen > .head { margin: 0; }
   body[data-decision="map"] #screen > .head h1 { font-size: 22px; margin: 0; }
-  body[data-decision="map"] #screen > .map { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, var(--mapw)) minmax(0, 1fr); column-gap: clamp(16px, 2vw, 40px); margin: 0; }
-  body[data-decision="map"] .planner { grid-column: 1; grid-row: 1; padding: 0; align-self: start; justify-self: stretch; max-width: 360px; }
-  body[data-decision="map"] .planner .legend { flex-direction: column; align-items: stretch; gap: clamp(6px, 1.2vh, 12px); width: clamp(140px, 10vw, 200px); }
-  body[data-decision="map"] .planner .lg { height: clamp(40px, 5.6vh, 56px); padding: 0 clamp(12px, 1vw, 18px); gap: clamp(8px, .8vw, 14px); font-size: clamp(16px, 2.3vh, 22px); border-radius: var(--r-s); }
-  body[data-decision="map"] .planner .lg .lgart { width: clamp(38px, 5.4vh, 54px); height: clamp(38px, 5.4vh, 54px); margin: -6px -4px; }
-  body[data-decision="map"] .planner .lg .ic { width: clamp(22px, 3vh, 30px); height: clamp(22px, 3vh, 30px); }
-  body[data-decision="map"] .planner .routebar { justify-content: flex-start; }
-  body[data-decision="map"] .mapscroll { grid-column: 2; grid-row: 1; min-height: 0; height: 100%; }
+  body[data-decision="map"] #screen > .map { display: flex; flex-direction: column; margin: 0; }
+  body[data-decision="map"] .mapscroll { order: 1; min-height: 0; }
+  /* The page's top and bottom paper are padding in % of its container: the container is as wide as the page. */
+  body[data-decision="map"] .mapclip { width: min(100%, 90dvh); margin: 0 auto; }
+  /* The phone's counter row (map.css), on the desktop's width: six equal chips under the map. */
+  body[data-decision="map"] .planner { order: 2; padding: 6px 0 0; width: min(100%, 90dvh); align-self: center; box-sizing: border-box; }
+  body[data-decision="map"] .planner .legend { display: grid; grid-template-columns: repeat(6, 1fr); gap: clamp(4px, .6vw, 10px); }
+  body[data-decision="map"] .planner .lg { flex-direction: column; gap: 0; height: clamp(52px, 8dvh, 76px); padding: 2px 0; justify-content: center; font-size: var(--fs-m); border-radius: 14px; }
+  body[data-decision="map"] .planner .lg .lgart { width: clamp(30px, 4.4dvh, 42px); height: clamp(30px, 4.4dvh, 42px); margin: -3px 0 -2px; }
+  body[data-decision="map"] .planner .lg .ic { width: clamp(22px, 3dvh, 30px); height: clamp(22px, 3dvh, 30px); }
+  body[data-decision="map"] .planner .routebar { justify-content: center; }
 
   /* The fight: you and your summons bare, at the left; the enemies at the right; the hand across the
      bottom as big as the screen's height lets it be, with the energy and the piles in its gutters. */
@@ -154,7 +156,6 @@
   body.fight .energy.orbart b { font-size: calc(var(--orb) * .36); -webkit-text-stroke-width: calc(var(--orb) * .08); }
   body.fight .pile.pileart { width: var(--pw); height: calc(var(--pw) * 1.08); }
   body.fight .pile.pileart b { min-width: calc(var(--pw) * .42); height: calc(var(--pw) * .42); border-radius: calc(var(--pw) * .21); font-size: calc(var(--pw) * .26); }
-  body.fight #dock .hintbtn { position: absolute; right: 0; bottom: calc(var(--eth) + 12px); height: clamp(40px, 5.2vh, 56px); min-width: clamp(64px, 5vw, 100px); padding: 0 clamp(10px, 1vw, 20px); font-size: clamp(14px, 1.05vw, 20px); }
   body.fight .fightbar .endturn { margin-left: auto; flex: 0 0 clamp(200px, 14vw, 300px); }
   body.fight .primary.endturn.plate { height: var(--eth); min-height: var(--eth); font-size: clamp(22px, 1.6vw, 32px); border-image-width: 30px 38px; }
   body.fight .primary.endturn .endhint { font-size: clamp(13px, .95vw, 18px); }
@@ -216,7 +217,6 @@
   .scol.r > .heroes { justify-content: flex-start; gap: clamp(8px, 1.4vw, 24px); }
   .heroes .chip { width: clamp(56px, 8vh, 84px); height: clamp(56px, 8vh, 84px); }
   .heroes .chip .mono, .heroes .chip .portrait { width: clamp(50px, 7.2vh, 76px); height: clamp(50px, 7.2vh, 76px); }
-  .scol.r > .opts > :nth-child(4) { grid-column: 1 / -1; }
   .scol > .go .primary { min-height: clamp(52px, 8vh, 76px); }
   .scol > .continue, .scol > .hero { min-height: clamp(64px, 11vh, 110px); }
   /* Custom Run: the controls at the left, the modifier list scrolling inside its own column. */
@@ -261,10 +261,6 @@
 }
 
 @media (min-width: 900px) and (orientation: landscape) {
-  /* Hint alone (card reward, rest, the map): a small button at the right, in the fight's place for it, not a stripe across the screen. */
-  :is(body.room, body[data-decision="map"]) #dock:has(> .hintrow > .hintbtn:only-child) { background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; pointer-events: none; }
-  :is(body.room, body[data-decision="map"]) #dock:has(> .hintrow > .hintbtn:only-child) .hintrow { max-width: none; margin: 0; justify-content: flex-end; }
-  :is(body.room, body[data-decision="map"]) #dock:has(> .hintrow > .hintbtn:only-child) .hintbtn { flex: none; width: auto; min-width: 72px; pointer-events: auto; }
 }
 
 @media (min-width: 900px) and (orientation: landscape) {

@@ -6,3 +6,5 @@ text
 art
 # The game's sounds, linked in by serve.sh from ~/.cache/spirebot-data/audio (tools/audio_import.py): never commit them.
 audio
+# The CB3 combat net's weights (net/cb3.bin, ~29 MB), linked in by serve.sh from ~/.cache/spirebot-data/net: never commit them.
+net

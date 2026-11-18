@@ -664,6 +664,7 @@ fn row(
         state,
         detail,
         right,
+        grants: event_grants(run, &item.action),
         label: Rich(vec![RichSpan {
             fx: None,
             role: Role::Plain,
@@ -671,6 +672,18 @@ fn row(
             text: label,
         }]),
         ..Button::row(id.0, Rich::default())
+    }
+}
+
+/// What an event option adds to the run ([`crate::grants`]).
+fn event_grants(run: &Run, action: &RunAction) -> Vec<InfoRef> {
+    match (action, run.pending_decision()) {
+        (RunAction::EventOption(i), RunDecision::Event(room)) => room
+            .options
+            .get(*i)
+            .map(crate::grants::of)
+            .unwrap_or_default(),
+        _ => Vec::new(),
     }
 }
 

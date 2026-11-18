@@ -34,7 +34,7 @@ impl RelicModel for VelvetChoker {
 
 /// The relic's `_cardsPlayedThisTurn`.
 fn cards_played(s: &mut CombatState, me: RelicId) -> &mut i32 {
-    let RelicData::VelvetChoker(data) = &mut s.relic_mut(me).data else {
+    let RelicData::VelvetChoker(data) = s.relic_data_mut(me) else {
         unreachable!("a VelvetChoker has VelvetChoker data");
     };
     &mut data.cards_played_this_turn
@@ -56,7 +56,7 @@ impl Hooks for VelvetChoker {
         _auto_play: AutoPlayType,
     ) -> bool {
         // The only player owns every card.
-        let RelicData::VelvetChoker(data) = s.relic(me).data else {
+        let RelicData::VelvetChoker(data) = *s.relic_data(me) else {
             unreachable!("a VelvetChoker has VelvetChoker data");
         };
         data.cards_played_this_turn < CARDS

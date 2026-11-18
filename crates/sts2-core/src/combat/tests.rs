@@ -564,6 +564,30 @@ fn an_upgrade_caps_absolute_cost_modifiers_and_a_clone_has_its_own() {
 }
 
 #[test]
+fn an_ember_deck_card_keeps_a_this_combat_cost_through_its_first_upgrade() {
+    // TezcatarasEmber.OnEnchant's `UpgradeBy(-cost)` capped the modifiers present then (none on a
+    // deck card); the combat clone must not carry that cap into a later upgrade (a Confused draw
+    // sets 1, Armaments upgrades the card: the referee shows 1, not 0).
+    let mut config = CombatConfig::new(Character::Ironclad, SEED, 0).expect("Ironclad starts");
+    config.deck[0] = DeckCard {
+        enchantment: Some(Enchantment::new(
+            crate::content::enchantments::EnchantmentKind::TezcatarasEmber,
+            1,
+        )),
+        ..DeckCard::new(CardKind::StrikeIronclad)
+    };
+    let mut c = Combat::new(config);
+    let strike = CardId(0);
+    assert_eq!(c.state.energy_cost(strike), 0);
+    c.state.energy_cost_mut(strike).set_this_combat(1);
+    with_engine(&mut c, |eng| {
+        eng.upgrade_card(strike);
+        Ok(())
+    });
+    assert_eq!(c.state.energy_cost(strike), 1);
+}
+
+#[test]
 fn local_cost_modifiers_fold_in_order_and_expire() {
     // CardEnergyCost.cs: modifiers apply in insertion order; EndOfTurnCleanup drops the
     // turn-scoped ones, AfterCardPlayedCleanup the until-played ones.
@@ -694,6 +718,7 @@ mod content_gaps;
 mod cq1;
 mod engine_gaps;
 mod fix1;
+mod forecast;
 mod glow;
 mod gm3;
 mod pd3;
@@ -704,6 +729,8 @@ mod px11;
 mod px13;
 mod px26;
 mod px8;
+mod rln28;
+mod tma1;
 mod xc6;
 mod xev1;
 mod xgm2;

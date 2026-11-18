@@ -35,7 +35,7 @@ impl Hooks for TeaOfDiscourtesy {
     type Me = RelicId;
 
     fn before_combat_start(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        let RelicData::TeaOfDiscourtesy(data) = eng.s.relic(me).data else {
+        let RelicData::TeaOfDiscourtesy(data) = *eng.s.relic_data(me) else {
             unreachable!("a TeaOfDiscourtesy has TeaOfDiscourtesy data");
         };
         if data.combats_left <= 0 {
@@ -55,7 +55,7 @@ impl Hooks for TeaOfDiscourtesy {
                 )?;
             }
         }
-        let RelicData::TeaOfDiscourtesy(data) = &mut eng.s.relic_mut(me).data else {
+        let RelicData::TeaOfDiscourtesy(data) = eng.s.relic_data_mut(me) else {
             unreachable!("a TeaOfDiscourtesy has TeaOfDiscourtesy data");
         };
         data.combats_left -= 1;

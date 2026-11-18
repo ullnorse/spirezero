@@ -15,7 +15,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::ThrowingAxe(data) = &mut s.relic_mut(me).data else {
+    let RelicData::ThrowingAxe(data) = s.relic_data_mut(me) else {
         unreachable!("a ThrowingAxe has ThrowingAxe data");
     };
     data
@@ -50,7 +50,7 @@ impl Hooks for ThrowingAxe {
         _target: Option<CreatureId>,
         count: u32,
     ) -> u32 {
-        let RelicData::ThrowingAxe(data) = s.relic(me).data else {
+        let RelicData::ThrowingAxe(data) = *s.relic_data(me) else {
             unreachable!("a ThrowingAxe has ThrowingAxe data");
         };
         if data.used_this_combat {

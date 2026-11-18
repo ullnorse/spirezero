@@ -141,7 +141,7 @@ fn set_hp_to_1(eng: &mut Engine<'_>, creature: CreatureId) -> Flow {
 
 /// Whether the fight is at one of the relic's marked points.
 fn at_marked_point(s: &CombatState, me: RelicId) -> bool {
-    let RelicData::FurCoat(data) = s.relic(me).data else {
+    let RelicData::FurCoat(data) = *s.relic_data(me) else {
         unreachable!("a FurCoat has FurCoat data");
     };
     s.map_coord.is_some_and(|c| data.marks(c))

@@ -67,6 +67,7 @@ impl Engine<'_> {
                     .s
                     .set_enchantment(card, Some(Enchantment::new(kind, amount)));
                 enchantments::modify_card(c);
+                self.s.apply_pending_cost_caps(card);
             }
             Some(existing) => existing.amount += amount,
         }
@@ -91,6 +92,7 @@ impl Engine<'_> {
         c.star_cost.reset_for_downgrade();
         cards::after_downgraded(self.s, card);
         enchantments::modify_card(self.s.card_mut(card));
+        self.s.apply_pending_cost_caps(card);
     }
 
     /// `CardCmd.TransformTo<T>(original)` for one card (`CardCmd.cs:337-520`): nothing once

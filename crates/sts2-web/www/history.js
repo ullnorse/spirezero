@@ -2,8 +2,9 @@
 // run with its character, ascension, seed, result, floor, act, killer, final deck, relics and
 // path, plus what a replay needs (seed, character, ascension and the save's action log). The
 // History screen on the start page reads it.
-import { dailyOf, utcDate } from "./daily.js";
 import { shareRun, shareWords } from "./share.js";
+
+const utcDate = (d = new Date()) => d.toISOString().slice(0, 10);
 
 const KEY = "sts2-history-v1";
 const MAX = 300;
@@ -43,6 +44,8 @@ export function killerName(text) {
 
 // Called after every view; records the run once when it has just ended (a win or a loss).
 let recorded = false;
+let lastId = null;
+export const lastRunId = () => lastId;
 export function recordRun(view) {
   if (!view?.over) {
     recorded = false;
@@ -53,11 +56,11 @@ export function recordRun(view) {
   recorded = true;
   const at = Date.now();
   const h = read();
+  lastId = `${at.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   h.push({
-    id: `${at.toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+    id: lastId,
     at,
     date: utcDate(new Date(at)),
-    daily: dailyOf(view.save.seed),
     modifierKeys: view.save.modifiers ?? [],
     modifiers: (view.run?.modifiers ?? []).map((m) => m.title),
     character: view.save.character,
@@ -114,8 +117,6 @@ export function stats(h = read()) {
   };
 }
 
-// The first recorded result of the daily on `date`, or null.
-export const dailyResult = (date = utcDate()) => read().find((r) => r.daily === date) ?? null;
 
 // ---- the replay hook ----------------------------------------------------------------------
 // "Watch the bot play this seed": another module builds the replay viewer. It answers either by
@@ -142,13 +143,11 @@ function tile(big, small) {
 const line = (label, sub, right) =>
   ctx.el("div", "hline", ctx.el("span", "main", ctx.el("span", "lab", label), sub ? ctx.el("span", "sub", sub) : null), right != null ? ctx.el("span", "right", right) : null);
 
-// The stats tiles, today's daily and the hero, ascension and killer breakdowns (History and the
+// The stats tiles and the hero, ascension and killer breakdowns (History and the
 // compendium's Statistics share them).
 export function statsBlocks(h = read()) {
   const st = stats(h);
   const out = [ctx.el("div", "hstats", tile(`${st.runs}`, st.runs === 1 ? "run" : "runs"), tile(`${st.wins}`, st.wins === 1 ? "win" : "wins"), tile(st.rate, "win rate"), tile(`${st.bestStreak}`, "best streak"))];
-  const today = dailyResult();
-  if (today) out.push(ctx.el("h3", null, "Today's daily"), line(`${today.result === "win" ? "Won" : "Lost"} · ${ctx.character(today.character).name}`, `Floor ${today.floor} · seed ${today.seed}`));
   out.push(ctx.el("h3", null, "By hero"), ...st.byCharacter.map((g) => line(ctx.character(g.key).name, `${g.wins} of ${g.runs} won`, pct(g.wins, g.runs))));
   out.push(ctx.el("h3", null, "By ascension"), ...st.byAscension.map((g) => line(`Ascension ${g.key}`, `${g.wins} of ${g.runs} won`, pct(g.wins, g.runs))));
   if (st.killers.length) out.push(ctx.el("h3", null, "Top killers"), ...st.killers.map(([k, n]) => line(k, null, `×${n}`)));
@@ -169,7 +168,7 @@ export function historySheet() {
         const b = ctx.el(
           "button",
           `row hrun ${win ? "won" : "lost"}`,
-          ctx.el("span", "main", ctx.el("span", "lab", `${win ? "Victory" : "Defeat"} · ${ctx.character(r.character).name}${r.ascension ? ` A${r.ascension}` : ""}${r.daily ? " · Daily" : r.modifiers?.length ? " · Custom" : ""}`), ctx.el("span", "sub", `Floor ${r.floor} · Act ${r.act}${r.killer ? ` · ${r.killer}` : ""} · ${when(r)}`)),
+          ctx.el("span", "main", ctx.el("span", "lab", `${win ? "Victory" : "Defeat"} · ${ctx.character(r.character).name}${r.ascension ? ` A${r.ascension}` : ""}${r.modifiers?.length ? " · Custom" : ""}`), ctx.el("span", "sub", `Floor ${r.floor} · Act ${r.act}${r.killer ? ` · ${r.killer}` : ""} · ${when(r)}`)),
           ctx.el("span", "chev", "›"),
         );
         list.append(ctx.tap(b, () => ctx.showLocal(runSheet(r.id))));
@@ -221,7 +220,7 @@ export function runSheet(id) {
     title: r ? `${r.result === "win" ? "Victory" : "Defeat"} · ${ctx.character(r.character).name}` : "Run",
     body() {
       if (!r) return [ctx.el("p", "note", "That run is gone.")];
-      const save = ctx.el("p", "note", `${when(r)} · Ascension ${r.ascension} · seed ${r.seed}${r.daily ? ` · Daily ${r.daily}` : ""}${r.modifiers?.length ? ` · Modifiers: ${r.modifiers.join(", ")}` : ""}`);
+      const save = ctx.el("p", "note", `${when(r)} · Ascension ${r.ascension} · seed ${r.seed}${r.modifiers?.length ? ` · Modifiers: ${r.modifiers.join(", ")}` : ""}`);
       const fin = ctx.el("p", "note", `Act ${r.act} · Floor ${r.floor} · ♥ ${r.hp}/${r.max_hp} · ${r.gold} gold${r.killer ? ` · killed by ${r.killer}` : ""}`);
       const share = ctx.tap(ctx.el("button", "chipbtn", "Share seed"), async () => ctx.say(shareWords[await shareRun({ seed: r.seed, char: r.character, asc: r.ascension })]));
       const again = ctx.tap(ctx.el("button", "chipbtn", "Play this seed"), () => {

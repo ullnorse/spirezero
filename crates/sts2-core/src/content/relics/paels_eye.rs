@@ -31,14 +31,14 @@ impl Default for Data {
 }
 
 fn data(s: &CombatState, me: RelicId) -> Data {
-    let RelicData::PaelsEye(data) = s.relic(me).data else {
+    let RelicData::PaelsEye(data) = *s.relic_data(me) else {
         unreachable!("a PaelsEye has PaelsEye data");
     };
     data
 }
 
 fn data_mut<'a>(eng: &'a mut Engine<'_>, me: RelicId) -> &'a mut Data {
-    let RelicData::PaelsEye(data) = &mut eng.s.relic_mut(me).data else {
+    let RelicData::PaelsEye(data) = eng.s.relic_data_mut(me) else {
         unreachable!("a PaelsEye has PaelsEye data");
     };
     data

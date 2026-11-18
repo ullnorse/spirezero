@@ -36,7 +36,7 @@ fn pen_nib_doubles_the_tenth_attack() {
     let strike = give_card(&mut c, CardKind::StrikeNecrobinder, 0);
     play(&mut c, strike, Some(target));
     assert_eq!(c.state.creature(target).hp, hp - 12, "6 doubled");
-    let RelicData::PenNib(data) = c.state.relic(RelicId(1)).data else {
+    let RelicData::PenNib(data) = *c.state.relic_data(RelicId(1)) else {
         panic!("not a PenNib");
     };
     assert_eq!(data.attacks_played, 0);
@@ -58,7 +58,7 @@ fn happy_flower_gives_energy_on_every_third_turn() {
         RelicData::HappyFlower(happy_flower::Data { turns_seen: 2 }),
     );
     assert_eq!(c.state.player.energy, 4);
-    let RelicData::HappyFlower(data) = c.state.relic(RelicId(1)).data else {
+    let RelicData::HappyFlower(data) = *c.state.relic_data(RelicId(1)) else {
         panic!("not a HappyFlower");
     };
     assert_eq!(data.turns_seen, 0);
@@ -86,7 +86,7 @@ fn tuning_fork_gives_block_on_the_tenth_skill() {
     let defend = give_card(&mut c, CardKind::DefendNecrobinder, 0);
     play(&mut c, defend, None);
     assert_eq!(c.state.creature(p).block, 5 + 7);
-    let RelicData::TuningFork(data) = c.state.relic(RelicId(1)).data else {
+    let RelicData::TuningFork(data) = *c.state.relic_data(RelicId(1)) else {
         panic!("not a TuningFork");
     };
     assert_eq!(data.skills_played, 0);
@@ -110,7 +110,7 @@ fn joss_paper_draws_when_the_count_reaches_five() {
         hand + 1,
         "one drawn for one exhausted"
     );
-    let RelicData::JossPaper(data) = c.state.relic(RelicId(1)).data else {
+    let RelicData::JossPaper(data) = *c.state.relic_data(RelicId(1)) else {
         panic!("not a JossPaper");
     };
     assert_eq!(data.cards_exhausted, 0);

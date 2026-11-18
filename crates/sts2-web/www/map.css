@@ -51,6 +51,6 @@
 /* WEB60: the map's heading is said by the top bar and the map; it keeps its line so nothing shifts. */
 .head h1.quiet { visibility: hidden; }
 /* The boss as the next room looks as tappable as any next room: teal glow and a bob, like .reach. */
-.node.boss.go rect { stroke: var(--sel); animation: node 1.3s ease-in-out 4; }
+.node.boss.go rect { stroke: var(--sel); animation: node calc(1.3s * var(--spd, 1)) ease-in-out 4; }
 .node.boss.art.go .mi { filter: url(#tint-ink) drop-shadow(0 0 7px #59d9e6) drop-shadow(0 0 3px #59d9e6); animation: nodebob 1.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 @media (prefers-reduced-motion: reduce) { .node.boss.art.go .mi, .node.boss.go rect { animation: none; } }

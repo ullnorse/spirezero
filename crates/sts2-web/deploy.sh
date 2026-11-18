@@ -4,9 +4,10 @@
 #   deploy.sh --full       the whole realtest.sh (about 7 minutes) instead of a minute of play
 #   deploy.sh --force      switch even if the build or the tests fail (says so)
 #   deploy.sh --rollback   point `current` back at the previous release and restart
-# A release is a full www directory: git's www files + built wasm; art, text and audio are links into the data cache.
+# A release is a full www directory: git's www files + built wasm; art, text, audio and net (the combat net's
+# weights, net/cb3.bin) are links into the data cache.
 # The `sts2-web` unit serves $DATA/current (WWW=$DATA/current serve.sh), so merging to main deploys nothing.
-# Env (defaults): DATA (~/.cache/spirezero-data: releases/ and current live here), ASSETS (= DATA: art/text/audio source),
+# Env (defaults): DATA (~/.cache/spirezero-data: releases/ and current live here), ASSETS (= DATA: art/text/audio/net source),
 #   UNIT (sts2-web), LIVE_PORT (8765), KEEP (3), plus realtest.sh's ID, PORT, CDP_PORT, HOST, OUT for the test run.
 set -eu
 cachedir() { n="$HOME/.cache/spirezero-$1" o="$HOME/.cache/spirebot-$1"; if [ ! -e "$n" ] && [ -d "$o" ]; then echo "$o"; else echo "$n"; fi; }  # old name while only it exists
@@ -75,7 +76,7 @@ if [ -z "$fail" ]; then
   git archive HEAD crates/sts2-web/www | tar -x --strip-components=3 -C "$rel"
   # cargo xtask art-import wipes art/, the home screen icons with it.
   [ -f "$ASSETS/art/app/icon-180.png" ] || python3 crates/sts2-web/tools/icon_import.py || true
-  for d in art text audio; do [ -d "$ASSETS/$d" ] && ln -s "$ASSETS/$d" "$rel/$d"; done
+  for d in art text audio net; do [ -d "$ASSETS/$d" ] && ln -s "$ASSETS/$d" "$rel/$d"; done
   echo "building $commit ($branch) into $rel"
   if ! WWW="$rel" crates/sts2-web/build.sh; then fail="build failed"; fi
 fi

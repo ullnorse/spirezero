@@ -969,6 +969,28 @@ mod tests {
         assert_eq!(loner.state.max_hp, max_hp + 5);
     }
 
+    /// RLN6: a curse among the two picks transforms into a curse; before, the second pick failed
+    /// with `UnsupportedCard` whenever the first or second card was a curse.
+    #[test]
+    fn morphic_grove_transforms_a_picked_curse() {
+        for order in [[10, 0], [0, 10]] {
+            let mut run = in_event(EventKind::MorphicGrove, |s| {
+                s.gold = 150;
+                s.deck.push(RunCard::new("CLUMSY"));
+            });
+            run.apply(RunAction::EventOption(0)).expect("GROUP");
+            let first = RunAction::SelectCard(order[0]);
+            run.apply(first).expect("a pick");
+            let second = RunAction::SelectCard(order[1]);
+            assert!(run.accepts(&second), "{order:?}");
+            run.apply(second).expect("the second pick");
+            let deck = &run.state.deck;
+            assert_eq!(deck.len(), 11);
+            assert!(!deck.iter().any(|c| c.id == "CLUMSY"), "{order:?}");
+            assert!(matches!(run.pending_decision(), RunDecision::Map(_)));
+        }
+    }
+
     #[test]
     fn trash_heap_dives_in_for_a_relic_or_grabs_gold_and_a_card() {
         let mut dive = in_event(EventKind::TrashHeap, |_| {});

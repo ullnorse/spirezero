@@ -51,6 +51,7 @@ pub fn boss_combat(s: &RunState, world: u64) -> Option<Combat> {
         .collect();
     let to_i32 = |n: usize| i32::try_from(n).unwrap_or(i32::MAX);
     let boss = s.map.boss().coord;
+    config.test_mode = s.test_mode;
     config.encounter = encounter;
     config.room_type = RoomType::Boss;
     config.deck = deck;

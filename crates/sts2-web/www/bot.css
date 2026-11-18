@@ -1,32 +1,10 @@
 /* WEB10: ask the bot, watch the bot, draw odds (bot.js, replay.js, odds.js). */
 
-/* The Hint button in the dock: beside End Turn or the primary button, or on a row of its own. */
-.hintbtn { flex: none; min-width: 48px; height: 56px; padding: 0 calc(10 * var(--u, 1px)); border-radius: var(--r-s); border: 1px solid color-mix(in srgb, var(--gold) 55%, var(--line)); background: var(--surf); color: var(--gold); font-weight: 800; font-size: var(--fs-s, 14px); font-family: inherit; }
-.fightbar .hintbtn { min-width: max(40px, calc(44 * var(--u, 1px))); height: calc(52 * var(--u, 1px)); padding: 0 calc(8 * var(--u, 1px)); font-size: max(11px, calc(14 * var(--u, 1px))); }
-.hintbtn:active { background: var(--surf2); }
-.hintrow { display: flex; align-items: center; gap: 8px; }
-.hintrow .primary { flex: 1; }
-.hintrow > .hintbtn:only-child { flex: 1; height: 48px; }
-
-/* The bot's line: under the top bar, one tap closes it. */
-#botsay {
-  position: fixed; left: 50%; transform: translateX(-50%); top: calc(var(--top, 64px) + 6px); z-index: 18;
-  max-width: min(92vw, 520px); display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
-  padding: 8px 14px; border-radius: var(--r); background: color-mix(in srgb, var(--surf) 94%, transparent);
-  border: 1px solid color-mix(in srgb, var(--gold) 55%, var(--line)); box-shadow: 0 6px 20px rgba(0,0,0,.35);
-  font-size: var(--fs-s, 14px); animation: fade .2s ease;
-}
-#botsay .who { font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--gold); }
-#botsay small { color: var(--dim); font-weight: 600; }
-#botsay.busy b { color: var(--dim); font-weight: 600; }
-#botsay[hidden] { display: none; }
+/* The top bar's hint toggle: gold while hints are on. */
+.askbot.on { color: var(--gold); }
 
 /* What the bot would tap: a gold ring that breathes; the creature it aims at, a gold edge. */
 .botpick { outline: 3px solid var(--gold) !important; outline-offset: 2px; animation: botpulse 1.4s ease-in-out infinite; }
-.botpick:not(.botquiet) { z-index: 1; position: relative; }
-/* The setting's background hint: a thin steady outline, nothing else; it moves nothing. */
-.botpick.botquiet { outline-width: 2px; outline-offset: 1px; animation: none; }
-.botaim.botquiet { box-shadow: 0 0 0 2px var(--gold) !important; }
 .botaim { box-shadow: 0 0 0 3px var(--gold), 0 0 18px color-mix(in srgb, var(--gold) 60%, transparent) !important; }
 @keyframes botpulse { 50% { outline-color: color-mix(in srgb, var(--gold) 35%, transparent); } }
 /* A map room (an SVG group, where outlines do not draw): its ring and glow turn gold. */
@@ -42,7 +20,6 @@ body.watching #sheet.pinned { bottom: calc(var(--dock) + var(--watchbar, 108px))
 body.watching #screen { padding-bottom: calc(var(--dock) + var(--watchbar, 108px) + 12px); }
 /* A fight under the bar: the screen ends where the lifted dock starts, so the field is as tall as in play. */
 @media (max-width: 899px) { body.watching.fight #screen { min-height: calc(100dvh - var(--top, 100px) - var(--dock) - var(--watchbar, 108px) - 30px); padding-bottom: 0; } }
-body.watching #botsay { display: none; }
 #watchbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 22; max-width: 560px; margin: 0 auto;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); display: grid; gap: 6px;
@@ -52,6 +29,8 @@ body.watching #botsay { display: none; }
 #watchbar .cap b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #watchbar .cap b::before { content: "BOT "; font-size: 11px; letter-spacing: 1px; color: var(--gold); }
 #watchbar .cap small { color: var(--dim); font-weight: 600; }
+#watchbar .cap small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#watchbar.scripted .cap b::before { content: none; }
 #watchbar .ctl { display: flex; gap: 6px; }
 .wbtn { height: 44px; min-width: 44px; padding: 0 12px; border-radius: var(--r-s); border: 1px solid var(--line); background: var(--surf); color: var(--fg); font-family: inherit; font-size: 15px; font-weight: 700; line-height: 1; }
 .wbtn:active { background: var(--surf2); }
@@ -72,7 +51,6 @@ body.watching #botsay { display: none; }
 #watchlist .bot { color: var(--gold); }
 #watchlist .bot small { color: var(--dim); }
 #watchlist .note { color: var(--dim); margin: 4px 0; }
-.watchruns { display: grid; gap: 6px; }
 .row.watchbot { width: 100%; margin-bottom: 8px; border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); }
 
 /* Draw odds, over the draw pile's cards. */
@@ -119,7 +97,7 @@ body.watching #botsay { display: none; }
 .rvbar { width: 100%; height: 1dvh; min-height: 6px; border-radius: var(--pill); background: var(--surf2); overflow: hidden; }
 .rvbar i { display: block; height: 100%; background: var(--gold); }
 .rvtrack { grid-row: 3; display: grid; min-height: 0; }
-.rvcard { min-width: 0; min-height: 0; overflow-y: auto; touch-action: pan-y; display: flex; flex-direction: column; gap: 1.4dvh; padding: .5dvh 4vw 1dvh; animation: fade .2s ease; }
+.rvcard { min-width: 0; min-height: 0; overflow-y: auto; touch-action: pan-y; display: flex; flex-direction: column; gap: 1.4dvh; padding: .5dvh 4vw 1dvh; animation: fade calc(.2s * var(--spd, 1)) ease; }
 .rvcard:not(.on) { display: none; }
 body.still .rvcard { animation: none; }
 .rvwhere { color: var(--dim); font-size: var(--fs-s); font-weight: 700; }
@@ -177,3 +155,7 @@ body.rvboarding #watchbar { display: none; }
   .rvboardmoves span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
   .rvbusy { padding-inline: 25vw; }
 }
+
+/* WEB82: the combat net's buttons beside the hint toggle; "Net plays fights" gold while on. */
+.netbot.on { color: var(--gold); }
+.netone:disabled { opacity: .35; }

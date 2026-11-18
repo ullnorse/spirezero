@@ -24,14 +24,14 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::UnsettlingLamp(data) = &mut s.relic_mut(me).data else {
+    let RelicData::UnsettlingLamp(data) = s.relic_data_mut(me) else {
         unreachable!("an UnsettlingLamp has UnsettlingLamp data");
     };
     data
 }
 
 fn data(s: &CombatState, me: RelicId) -> Data {
-    let RelicData::UnsettlingLamp(data) = s.relic(me).data else {
+    let RelicData::UnsettlingLamp(data) = *s.relic_data(me) else {
         unreachable!("an UnsettlingLamp has UnsettlingLamp data");
     };
     data

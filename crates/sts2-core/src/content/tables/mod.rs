@@ -116,7 +116,8 @@ fn lookup(table: &'static [(&str, &[ModelVar])], id: &str) -> &'static [ModelVar
 }
 
 /// A relic's `CanonicalVars` by `ModelId.Entry` (empty for none).
-pub(crate) fn relic_vars(id: &str) -> &'static [ModelVar] {
+#[must_use]
+pub fn relic_vars(id: &str) -> &'static [ModelVar] {
     lookup(relic_vars::RELIC_VARS, id)
 }
 

@@ -43,6 +43,7 @@ const USAGE: &str = "usage:
   sts2-diff collect-starts --first N --count M [--run-policy FILE|builtin] [--start-value FILE|builtin] [--jobs N] --out FILE.jsonl
   sts2-diff value-collect --first N --count M [--run-policy FILE|builtin] [--start-value FILE|builtin] [--jobs N] --out DIR
   sts2-diff run-collect --first N --count M [--policy FILE [--greedy]] [--rng N] [--worlds K] [--big-worlds K] [--boss-worlds K] [--beam B] [--ascension N] [--jobs N] --out DIR
+  sts2-diff solve [--character C] [--encounter ID] [--ascension N] [--seed S] [--hand ID,..] [--relics ID,..] [--play ID,..] [--enemy-hp N] [--hp N] [--no-starter-relic] [--heal-bound N] [--max-turns N] [--max-states N] [--no-merge] [--mc N]   (docs/specs/solver.md)
   sts2-diff capacities DIR  (merges the files STS2_CAPACITIES=DIR left; see crates/sts2-diff/src/capacity.rs)";
 
 /// The flags `gen` and `gen-batch` share.
@@ -270,6 +271,24 @@ fn flags(command: &str) -> Option<(Vec<&'static str>, &'static [&'static str])> 
                 "--value-leaves",
                 "--encounters",
             ],
+        ),
+        "solve" => (
+            vec![
+                "--character",
+                "--encounter",
+                "--ascension",
+                "--seed",
+                "--hand",
+                "--relics",
+                "--play",
+                "--enemy-hp",
+                "--hp",
+                "--max-turns",
+                "--max-states",
+                "--mc",
+                "--heal-bound",
+            ],
+            &["--no-merge", "--no-starter-relic"],
         ),
         "bot" => (
             vec![
@@ -3143,6 +3162,7 @@ fn run(command: &str, args: &Args) -> Result<bool> {
         "sweep" => sweep_cmd(args),
         "reach" => reach_cmd(args),
         "bot" => bot_cmd(args),
+        "solve" => solve_cmd(args).map(|()| true),
         "run-log" => run_log_cmd(args),
         "deck-probe" => deck_probe_cmd(args),
         "boss-starts" => boss_starts_cmd(args),
@@ -3201,6 +3221,84 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// `sts2-diff solve`: per-action exact expected HP loss at a fight's decision.
+#[allow(clippy::print_stdout, reason = "the command's output")]
+fn solve_cmd(args: &Args) -> Result<()> {
+    use sts2_diff::solve::{self, Config, Setup, Solver};
+    let list = |flag: &str| -> Vec<String> {
+        args.get_opt(flag)
+            .map(|v| v.split(',').map(str::to_owned).collect())
+            .unwrap_or_default()
+    };
+    let card = |id: &str| ids::card_from_id(id).ok_or_else(|| format!("unknown card {id}"));
+    let mut setup = Setup::new(
+        character_or_default(args.get_opt("--character").or(Some("Ironclad")))?,
+        encounter_or_default(
+            args.get_opt("--encounter")
+                .or(Some("FUZZY_WURM_CRAWLER_WEAK")),
+        )?,
+    );
+    setup.ascension = args.parse_or("--ascension", 0)?;
+    setup.starter_relic = !args.has("--no-starter-relic");
+    if let Some(seed) = args.get_opt("--seed") {
+        seed.clone_into(&mut setup.seed);
+    }
+    setup.hand = list("--hand")
+        .iter()
+        .map(|k| card(k))
+        .collect::<std::result::Result<_, _>>()?;
+    setup.relics = list("--relics")
+        .iter()
+        .map(|r| ids::relic_from_id(r).ok_or_else(|| format!("unknown relic {r}")))
+        .collect::<std::result::Result<_, _>>()?;
+    setup.enemy_hp = args.get_opt("--enemy-hp").map(str::parse).transpose()?;
+    setup.player_hp = args.get_opt("--hp").map(str::parse).transpose()?;
+    let mut combat = setup.start()?;
+    for k in list("--play") {
+        solve::play_kind(&mut combat, card(&k)?)?;
+    }
+    let config = Config {
+        merge: !args.has("--no-merge"),
+        max_turns: args.parse_or("--max-turns", Config::default().max_turns)?,
+        max_states: args.parse_or("--max-states", Config::default().max_states)?,
+        heal_bound: match args.get_opt("--heal-bound") {
+            Some(n) => n.parse()?,
+            None => solve::heal_at_end(combat.state()),
+        },
+        end_heal_only: args.get_opt("--heal-bound").is_none(),
+    };
+    let s = combat.state();
+    let hand: Vec<&str> = s
+        .player
+        .hand
+        .iter()
+        .map(|&c| s.card(c).kind.name())
+        .collect();
+    let enemies: Vec<String> = s
+        .enemies
+        .iter()
+        .map(|&e| format!("{} hp", s.creature(e).hp))
+        .collect();
+    println!(
+        "{:?} A{} vs {} ({}); hp {}; hand {}",
+        setup.character,
+        setup.ascension,
+        ids::encounter(setup.encounter),
+        enemies.join(", "),
+        solve::player_hp(s),
+        hand.join(", ")
+    );
+    let mut solver = Solver::new(config);
+    let t = std::time::Instant::now();
+    solve::report(&mut solver, &combat, |line| println!("{line}"))?;
+    println!("{}", solve::totals(&solver.stats, t.elapsed()));
+    let mc: u64 = args.parse_or("--mc", 0)?;
+    if mc > 0 {
+        println!("{}", solve::monte_carlo(&mut solver, &combat, mc)?);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

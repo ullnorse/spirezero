@@ -2,9 +2,14 @@
 //! (`Counter`). At the start of the owner's turn it deals `Amount` unpowered damage to every
 //! hittable enemy, then `Amount` grows by 5 (`SetAmount`, no hooks).
 //!
-//! In test mode the damage is one `CreatureCmd.Damage` on all hittable enemies; the real game
-//! damages each enemy in its own call as the boulder's VFX reaches it. `docs/specs/test-mode.md`
-//! classifies the branch as cosmetic; the test-mode branch is ported.
+//! In test mode (`TestMode.IsOn`) the damage is one batched `CreatureCmd.Damage` on all hittable
+//! enemies: every HP loss first, then the after-hooks and deaths. In the real game
+//! `NRollingBoulderVfx` emits `HitCreature` as the boulder reaches each enemy and the handler
+//! makes one `DoDamage` call for that enemy alone, so one enemy's after-hooks and death (a Kaiser
+//! crab arm's `CrabRage`) run before the next enemy is hit. The VFX hits an enemy once the boulder
+//! (rolling left to right) passes the left edge of its visuals; that position comes from the
+//! scene, not the code, so the order used is the order of `HittableEnemies` at the turn start
+//! (also the order within one frame). Dead enemies are skipped by `Damage` itself.
 
 use crate::combat::hooks::{Hooks, PowerRef};
 use crate::combat::{Engine, Event, Flow, ValueProps};
@@ -41,13 +46,26 @@ impl Hooks for RollingBoulder {
         }
         let amount = eng.s.power(me.owner, me.id).amount;
         let targets = eng.hooked().hittable_enemies();
-        eng.damage(
-            &targets,
-            Decimal::from(amount),
-            ValueProps::UNPOWERED,
-            Some(me.owner),
-            None,
-        )?;
+        let amount = Decimal::from(amount);
+        if eng.s.test_mode {
+            eng.damage(
+                &targets,
+                amount,
+                ValueProps::UNPOWERED,
+                Some(me.owner),
+                None,
+            )?;
+        } else {
+            for &target in &targets {
+                eng.damage(
+                    &[target],
+                    amount,
+                    ValueProps::UNPOWERED,
+                    Some(me.owner),
+                    None,
+                )?;
+            }
+        }
         // SetAmount(Amount + Damage), clamped; the instance may have left its owner.
         let Some(power) = eng
             .s

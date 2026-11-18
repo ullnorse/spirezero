@@ -148,9 +148,8 @@ fn shroud_and_sleight_of_flesh_read_a_doom_removed_by_death() {
     let enemy_c = c.state.creature(e);
     assert!(enemy_c.is_dead());
     assert!(
-        enemy_c
-            .removed_powers
-            .iter()
+        c.state
+            .removed_powers(enemy_c.id)
             .any(|p| p.kind == PowerKind::Doom)
     );
     assert_eq!(c.state.creature(p).block, block + 3);

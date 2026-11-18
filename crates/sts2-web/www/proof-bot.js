@@ -16,10 +16,11 @@ async function until(f, ms = 60000) {
 
 // Asks the bot at the current position; its line and the worker's time.
 async function ask() {
-  window.sts2bot = { ms: null, label: null };
-  (await until(() => document.querySelector("#askbot"), 5000))?.click();
+  Object.assign(window.sts2bot, { ms: null, label: null });
+  window.sts2.setPref("hints", "always");
+  window.sts2bot.ask();
   const got = await until(() => window.sts2bot.label && window.sts2bot);
-  return got ? `${got.label}|${document.querySelector("#botsay small")?.textContent}|${got.ms}ms|lit${document.querySelectorAll(".botpick, .botaim").length}` : "no answer";
+  return got ? `${got.label}|${got.ms}ms|lit${document.querySelectorAll(".botpick, .botaim").length}` : "no answer";
 }
 
 const pct = (xs, p) => xs[Math.min(xs.length - 1, Math.floor(xs.length * p))];
@@ -57,8 +58,9 @@ export function scenarios({ play, v }) {
       const unlitLabels = new Map();
       for (let i = 0; i < 4000 && !v().over; i++) {
         const at = v().save.actions.length;
-        window.sts2bot = { ms: null, label: null };
-        (await until(() => document.querySelector("#askbot"), 5000))?.click();
+        Object.assign(window.sts2bot, { ms: null, label: null });
+        window.sts2.setPref("hints", "always");
+  window.sts2bot.ask();
         const got = await until(() => window.sts2bot.ms != null && window.sts2bot, 30000);
         if (!got) return `no answer at ${at}`;
         if (v().fight) times.push(got.ms);
@@ -86,10 +88,5 @@ export function scenarios({ play, v }) {
     },
     botwatch: () => watched(true),
     botwatchplay: () => watched(false),
-    botstart: async () => {
-      if (!play((n) => n.over, null, 20000)) return "no end";
-      S.showStart();
-      return document.querySelector("#start .watchruns") ? `runs${document.querySelectorAll("#start .watchruns .row").length}` : "no runs";
-    },
   };
 }

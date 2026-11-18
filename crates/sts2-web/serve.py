@@ -163,5 +163,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             print(urllib.parse.unquote(self.path.split("?", 1)[1]), file=sys.stderr, flush=True)
 
 
-os.chdir(sys.argv[1])
-http.server.ThreadingHTTPServer((sys.argv[3], int(sys.argv[2])), Handler).serve_forever()
+if __name__ == "__main__":  # export_static.py imports build() and art_id() from here
+    os.chdir(sys.argv[1])
+    http.server.ThreadingHTTPServer((sys.argv[3], int(sys.argv[2])), Handler).serve_forever()

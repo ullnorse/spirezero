@@ -10,7 +10,7 @@ use super::preview::{RESEEDS, reseed, same_rng};
 use super::state::{CombatState, CreatureId};
 use crate::content::cards::CardKind;
 use crate::content::monsters;
-use crate::content::monsters::machine::ForcedMove;
+use crate::content::monsters::machine::{ForcedMove, StateIdx};
 use crate::content::powers::PowerKind;
 use crate::content::tables::{self, Declared};
 use crate::decimal::Decimal;
@@ -78,6 +78,15 @@ pub struct AttackIntent {
     pub damage: i32,
     /// The number of hits.
     pub hits: u32,
+}
+
+/// One forecast move of [`Hooked::forecast_into`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ForecastStep {
+    /// The product of the random branches' weight shares up to this move.
+    pub certainty: f32,
+    /// The move's intents, as [`CombatState::intents`] would show them.
+    pub intents: Vec<Intent>,
 }
 
 /// A caller-owned scratch for [`Hooked::intents_into`].
@@ -198,31 +207,93 @@ impl Hooked<'_> {
         intents: &mut Vec<Intent>,
         bases: &mut Vec<Decimal>,
     ) {
+        self.move_intents_into(monster, None, scratch, intents, bases);
+    }
+
+    /// The intents of `monster`'s table move `state` as if it were its next move on this state
+    /// ([`Hooked::intents_into`] with the move run on a copy whose machine is at `state`).
+    /// Read-only, like [`Hooked::intents_into`]: the move runs on the scratch copy.
+    pub fn intents_of_move_into(
+        self,
+        monster: CreatureId,
+        state: StateIdx,
+        scratch: &mut IntentScratch,
+        intents: &mut Vec<Intent>,
+        bases: &mut Vec<Decimal>,
+    ) {
+        self.move_intents_into(monster, Some(state), scratch, intents, bases);
+    }
+
+    /// `monster`'s next k moves after its current one ([`MoveMachine::forecast`]) with their
+    /// intents ([`Hooked::intents_of_move_into`]), into `steps` (replaced; allocations reused).
+    /// Reads no random number: a random branch is forecast by its weights.
+    ///
+    /// [`MoveMachine::forecast`]: crate::content::monsters::machine::MoveMachine::forecast
+    pub fn forecast_into(
+        self,
+        monster: CreatureId,
+        k: usize,
+        scratch: &mut IntentScratch,
+        steps: &mut Vec<ForecastStep>,
+        bases: &mut Vec<Decimal>,
+    ) {
+        let Some(m) = self.s.monster_of(monster) else {
+            steps.clear();
+            return;
+        };
+        let moves = m
+            .machine
+            .forecast(m.kind.moves(), self.s, monster, m.rolled, k);
+        steps.resize_with(moves.len(), ForecastStep::default);
+        for (step, &(state, certainty)) in steps.iter_mut().zip(&moves) {
+            step.certainty = certainty;
+            self.intents_of_move_into(monster, state, scratch, &mut step.intents, bases);
+        }
+    }
+
+    /// [`Hooked::intents_into`], of the table move `at` when given.
+    fn move_intents_into(
+        self,
+        monster: CreatureId,
+        at: Option<StateIdx>,
+        scratch: &mut IntentScratch,
+        intents: &mut Vec<Intent>,
+        bases: &mut Vec<Decimal>,
+    ) {
         bases.clear();
         let s = self.s;
         let Some(m) = s.monster_of(monster) else {
             intents.clear();
             return;
         };
-        let declared: &[Declared] = match m.machine.forced.map(|f| f.kind) {
-            // `Creature.StunInternal` (`Creature.cs:538`).
-            Some(ForcedMove::Stunned | ForcedMove::BeetleWakeUp) => &[Declared::Stun],
-            // `IllusionPower` (`IllusionPower.cs:83`).
-            Some(ForcedMove::IllusionRevive) => &[Declared::Heal],
-            _ => tables::declared_intents(m.kind.id(), m.next_move_name()).unwrap_or(&[]),
-        };
-        let attack_kind = m.kind.model().attack_intent_type(m.machine.current);
+        let declared = declared_of(m, at);
+        let attack_kind = m
+            .kind
+            .model()
+            .attack_intent_type(at.unwrap_or(m.machine.current));
         let IntentScratch {
             state,
             events,
             effects,
             other,
         } = scratch;
+        // The copy the move runs on: as `s`, with the machine at `at` when given.
+        let prepare = |copy: &mut CombatState| {
+            if let Some(at) = at
+                && let Some(m) = copy.creature_mut(monster).monster.as_mut()
+            {
+                m.machine.current = at;
+                m.machine.forced = None;
+                m.rolled = true;
+            }
+        };
         let copy = refill(state, s);
+        prepare(copy);
         effects.read_move(s, monster, copy, events);
         if effects.random {
             // Keep only what the move gives under other random numbers too.
             let copy = refill(state, s);
+            prepare(copy);
             reseed(copy, RESEEDS[0]);
             other.read_move(s, monster, copy, events);
             if other.powers != effects.powers {
@@ -373,5 +444,19 @@ impl MoveEffects {
         }
         let gave = !self.powers.is_empty() || !self.cards.is_empty();
         self.random = gave && !same_rng(s, scratch);
+    }
+}
+
+/// The intents monster `m` declares for its next move, or for table move `at` when given.
+fn declared_of(m: &monsters::Monster, at: Option<StateIdx>) -> &'static [Declared] {
+    match (at, m.machine.forced.map(|f| f.kind)) {
+        (Some(at), _) => {
+            tables::declared_intents(m.kind.id(), m.kind.moves().states[at].id()).unwrap_or(&[])
+        }
+        // `Creature.StunInternal` (`Creature.cs:538`).
+        (None, Some(ForcedMove::Stunned | ForcedMove::BeetleWakeUp)) => &[Declared::Stun],
+        // `IllusionPower` (`IllusionPower.cs:83`).
+        (None, Some(ForcedMove::IllusionRevive)) => &[Declared::Heal],
+        (None, _) => tables::declared_intents(m.kind.id(), m.next_move_name()).unwrap_or(&[]),
     }
 }

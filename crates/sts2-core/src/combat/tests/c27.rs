@@ -148,3 +148,56 @@ fn intents_pair_attacks_with_their_damage() {
         }]
     );
 }
+
+#[test]
+fn osty_attacks_preview_and_deal_osty_powers_not_the_players() {
+    // CalculatedDamageVar.cs:64, OstyDamageVar: the dealer is Osty, so the player's Strength
+    // (-4) does not apply and Osty's own (+2) does; Weak on the player does not reduce it.
+    let cases = [
+        (CardKind::Unleash, 6 + 10, true),
+        (CardKind::Poke, 6, false),
+        (CardKind::Flatten, 12, false),
+        (CardKind::BoneShards, 9, false),
+    ];
+    for (kind, base, calculated) in cases {
+        let mut c = new_combat();
+        let (p, o, e) = (player(&c), osty(&c), enemy(&c));
+        c.state.creature_mut(o).max_hp = 10;
+        c.state.creature_mut(o).hp = 10;
+        with_engine(&mut c, |eng| {
+            eng.apply_power(p, PowerKind::Strength, Decimal::from(-4), Some(p))?;
+            eng.apply_power(p, PowerKind::Weak, Decimal::from(2), Some(p))?;
+            eng.apply_power(o, PowerKind::Strength, Decimal::from(2), Some(o))
+        });
+        let card = give_card(&mut c, kind, 0);
+        let var = if calculated {
+            Var::CalculatedDamage
+        } else {
+            Var::OstyDamage
+        };
+        let target = (kind != CardKind::BoneShards).then_some(e);
+        assert_eq!(
+            preview(&c, card, target, var),
+            Decimal::from(base + 2),
+            "{kind:?} preview"
+        );
+        let hp = c.state.creature(e).hp;
+        c.apply(Action::PlayCard { card, target }).expect("legal");
+        assert_eq!(c.state.creature(e).hp, hp - (base + 2), "{kind:?} damage");
+    }
+}
+
+#[test]
+fn osty_attack_previews_the_targets_vulnerable() {
+    let mut c = new_combat();
+    let (p, e) = (player(&c), enemy(&c));
+    with_engine(&mut c, |eng| {
+        eng.apply_power(p, PowerKind::Strength, Decimal::from(-4), Some(p))?;
+        eng.apply_power(e, PowerKind::Vulnerable, Decimal::from(2), Some(p))
+    });
+    let card = give_card(&mut c, CardKind::Poke, 0);
+    assert_eq!(
+        preview(&c, card, Some(e), Var::OstyDamage),
+        Decimal::from(9)
+    );
+}

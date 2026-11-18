@@ -50,8 +50,13 @@ impl EventModel for TheFutureOfPotions {
         s.potions_held().count() >= 2
     }
 
-    /// `BeforeEventStarted` only locks potion use (`CanUseOrRemovePotions`), which outside combat
-    /// nothing reads. Building the first option fills `PotionToCardType`: one `NextItem` on the
+    /// `BeforeEventStarted` locks potion use (`CanUseOrRemovePotions`), so no option's potion can
+    /// be drunk or discarded before it is traded.
+    fn locks_potions(&self) -> bool {
+        true
+    }
+
+    /// Building the first option fills `PotionToCardType`: one `NextItem` on the
     /// event `Rng` per held potion, from Attack/Skill/Power (no Power for Common and Token).
     fn begin(&self, ctx: &mut EventCtx<'_>) -> Result<Vec<EventOption>, RunError> {
         let held: Vec<(usize, &'static str)> = ctx.state().potions_held().collect();

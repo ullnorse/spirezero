@@ -20,7 +20,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::MusicBox(data) = &mut s.relic_mut(me).data else {
+    let RelicData::MusicBox(data) = s.relic_data_mut(me) else {
         unreachable!("a MusicBox has MusicBox data");
     };
     data

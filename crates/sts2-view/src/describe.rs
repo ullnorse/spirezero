@@ -36,6 +36,39 @@ type CardVars = HashMap<String, Value>;
 
 /// The keywords a card's hover tips list first, in `CardKeyword` order, with their entry in
 /// `card_keywords`.
+/// Words the text lights that the game explains under another title: `(lower-case word, table, entry)`.
+const TERM_ALIASES: &[(&str, &str, &str)] = &[
+    ("stunned", "static_hover_tips", "STUN"),
+    ("osty", "static_hover_tips", "SUMMON_STATIC"),
+    ("osty's", "static_hover_tips", "SUMMON_STATIC"),
+    ("exhaust pile", "static_hover_tips", "EXHAUST_PILE"),
+    ("hit points", "static_hover_tips", "HIT_POINTS"),
+    ("hp", "static_hover_tips", "HIT_POINTS"),
+    ("max hp", "static_hover_tips", "HIT_POINTS"),
+    ("orb slot", "orbs", "EMPTY_SLOT"),
+    ("orb slots", "orbs", "EMPTY_SLOT"),
+    ("channeling", "static_hover_tips", "CHANNELING"),
+    ("evoked", "static_hover_tips", "EVOKE"),
+    ("monster", "static_hover_tips", "ROOM_ENEMY"),
+    ("rest", "static_hover_tips", "ROOM_REST"),
+    ("treasure", "static_hover_tips", "ROOM_TREASURE"),
+];
+
+/// A table title without the game's `{Hotkey:...}` template (`Deck {Hotkey:choose(None):| ({})}`).
+fn clean_title(title: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0_usize;
+    for c in title.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out.trim().to_owned()
+}
+
 pub const KEYWORDS: [(CardKeyword, &str); 7] = [
     (CardKeyword::Exhaust, "EXHAUST"),
     (CardKeyword::Ethereal, "ETHEREAL"),
@@ -83,7 +116,9 @@ impl Describer {
         let mut terms = HashMap::new();
         let mut add = |table: &'static str, entry: String| {
             if let Some(title) = loc.get(table, &format!("{entry}.title")) {
-                terms.entry(title.to_lowercase()).or_insert((table, entry));
+                terms
+                    .entry(clean_title(title).to_lowercase())
+                    .or_insert((table, entry));
             }
         };
         for (_, entry) in KEYWORDS {
@@ -95,6 +130,19 @@ impl Describer {
         for key in loc.keys("static_hover_tips") {
             if let Some(entry) = key.strip_suffix(".title") {
                 add("static_hover_tips", entry.to_owned());
+            }
+        }
+        for key in loc.keys("orbs") {
+            if let Some(entry) = key.strip_suffix(".title") {
+                add("orbs", entry.to_owned());
+            }
+        }
+        // Words the text lights that the game explains under another title.
+        for &(word, table, entry) in TERM_ALIASES {
+            if loc.get(table, &format!("{entry}.title")).is_some() {
+                terms
+                    .entry(word.to_owned())
+                    .or_insert_with(|| (table, entry.to_owned()));
             }
         }
         Self {
@@ -467,7 +515,7 @@ impl Describer {
             PromptSource::Relic(relic) => usize::try_from(relic.0)
                 .ok()
                 .and_then(|i| state.player.relics.get(i))
-                .map(|r| named(r.kind.vars(&r.data)))
+                .map(|r| named(r.kind.vars(state.relic_data(r.id))))
                 .unwrap_or_default(),
             PromptSource::Power { owner, kind } => state
                 .creature(owner)
@@ -898,7 +946,7 @@ impl Describer {
                 let title = self.text(table, &format!("{entry}.title"))?;
                 let text = self.text(table, &format!("{entry}.description"))?;
                 Some(Term {
-                    title: title.to_owned(),
+                    title: clean_title(title),
                     text: text::format(text, &|name| global(name)),
                 })
             })
@@ -1371,6 +1419,28 @@ mod tests {
             d.hand_card_text(state, strike, None).as_deref(),
             Some("Deal 6 damage.")
         );
+    }
+
+    #[test]
+    fn the_glossary_names_pile_orb_and_alias_terms() {
+        let loc = Localization::from_json(&[
+            (
+                "static_hover_tips",
+                r#"{"DECK.title": "Deck {Hotkey:choose(None):| ({})}", "DECK.description": "Your cards.",
+                    "STUN.title": "Stun", "STUN.description": "Skips a turn."}"#,
+            ),
+            (
+                "orbs",
+                r#"{"FROST_ORB.title": "Frost", "FROST_ORB.description": "Orb: Gains Block."}"#,
+            ),
+        ]);
+        let d = Describer::new(Rc::new(loc));
+        let terms = d.glossary(
+            "[gold]Deck[/gold] [gold]Stunned[/gold] [gold]Frost[/gold]",
+            Keywords::NONE,
+        );
+        let titles: Vec<&str> = terms.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles, ["Deck", "Stun", "Frost"]);
     }
 
     #[test]

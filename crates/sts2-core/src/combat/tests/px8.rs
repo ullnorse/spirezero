@@ -119,5 +119,5 @@ fn removing_a_removed_power_runs_its_after_removed_again() {
     });
     assert_eq!(c.state.card(strike).affliction, None);
     assert!(!c.state.creature(p).has_power(PowerKind::Tangled));
-    assert_eq!(c.state.creature(p).removed_powers.len(), 1);
+    assert_eq!(c.state.removed_powers(p).count(), 1);
 }

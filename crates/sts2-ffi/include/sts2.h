@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define STS2_ABI_VERSION 3
+#define STS2_ABI_VERSION 11
 
 #define STS2_OK 0
 #define STS2_ERR_NULL (-1)
@@ -94,6 +94,14 @@ typedef struct Sts2RunConfig {
     uint32_t ascension; /* 0 to 10 */
     uint32_t combat;    /* 0 the agent plays fights, 1 greedy resolver, 2 random resolver */
     uint32_t intents;   /* 1 to write the combat section's intents */
+    /* The end-to-end options (sts2_rl::RunOptions): */
+    uint32_t dedupe;       /* 1 to merge the mask into action classes (one index per class) */
+    uint32_t turn_cap;     /* player turns per fight before the run ends capped (6); 0 none */
+    uint32_t decision_cap; /* agent decisions per run before it ends capped (7); 0 none */
+    uint32_t events;       /* 1 to write the events buffer */
+    uint32_t counters;     /* 1 to count saturations and unmapped decisions */
+    uint32_t priv_obs;     /* 1 to write the privileged buffer (value head only) */
+    uint32_t obs_v2;       /* 1 to write the run observation's v2 section (ABI 8) */
 } Sts2RunConfig;
 
 typedef struct Sts2RunStepStats {
@@ -108,10 +116,25 @@ typedef struct Sts2RunStepStats {
     uint32_t capped;
     uint32_t stuck;
     uint32_t reset;
+    uint32_t fight_capped;
+    uint32_t decision_capped;
+    uint64_t merged;           /* dedupe: indices merged into an earlier member's class */
+    uint64_t unmapped_classes; /* dedupe: classes no member of which has an index */
+    uint64_t auto_class;       /* dedupe: decisions taken because they had one class */
+    uint64_t unmapped_decisions; /* counters: decisions with an action without an index */
+    uint64_t saturated[8];     /* counters: any, cards, deck, creatures, powers, choice, relics, map */
 } Sts2RunStepStats;
+
+typedef struct Sts2RunEvents {
+    uint8_t floors;    /* floors entered in the step */
+    uint8_t bosses;    /* bosses killed in the step */
+    uint8_t boss_acts; /* bit a: a boss of act index a was killed */
+    uint8_t won;       /* 1: the run was won */
+} Sts2RunEvents;
 
 typedef struct Sts2RunLayout {
     uint64_t obs_bytes;
+    uint64_t priv_bytes;
     uint64_t mask_words;
     uint64_t actions;
     uint64_t run_base;
@@ -129,24 +152,69 @@ typedef struct Sts2RunLayout {
     uint64_t shop_at;
     uint64_t combat_at;
     uint64_t combat_static_at;
+    uint64_t v2_at;        /* the v2 section (ABI 8), to obs_bytes */
 } Sts2RunLayout;
 
 int32_t sts2_run_layout(Sts2RunLayout *out);
 Sts2RunEnvs *sts2_run_envs_new(size_t n, const Sts2RunConfig *config, size_t threads);
 void sts2_run_envs_free(Sts2RunEnvs *envs);
-/* Returns the number of episodes that ended (their envs were reset), or STS2_ERR_*. */
+/* Returns the number of episodes that ended (their envs were reset), or STS2_ERR_*.
+   An action of STS2_RUN_HOLD leaves its env as it is for the step. */
+#define STS2_RUN_HOLD 0xFFFF
 int32_t sts2_run_envs_step(Sts2RunEnvs *envs, const uint16_t *actions, size_t n);
 int32_t sts2_run_envs_reset_all(Sts2RunEnvs *envs);
+/* Env i starts a fresh run of seeds[i]; later runs take the source's episodes from `next`. */
+int32_t sts2_run_envs_restart(Sts2RunEnvs *envs, const uint64_t *seeds, size_t n, uint64_t next);
 int32_t sts2_run_envs_stats(const Sts2RunEnvs *envs, Sts2RunStepStats *out);
 size_t sts2_run_envs_len(const Sts2RunEnvs *envs);
 const uint8_t *sts2_run_envs_obs_ptr(const Sts2RunEnvs *envs);
 const uint8_t *sts2_run_envs_final_obs_ptr(const Sts2RunEnvs *envs);
+/* len x priv_bytes; zero unless priv_obs. For the value head only. */
+const uint8_t *sts2_run_envs_priv_ptr(const Sts2RunEnvs *envs);
 const uint64_t *sts2_run_envs_mask_ptr(const Sts2RunEnvs *envs);
 const uint8_t *sts2_run_envs_done_ptr(const Sts2RunEnvs *envs);
 const uint8_t *sts2_run_envs_won_ptr(const Sts2RunEnvs *envs);
-/* 0 none, 1 died, 2 victory, 3 unported content, 4 stuck, 5 capped */
+/* 0 none, 1 died, 2 victory, 3 unported content, 4 stuck, 5 capped (engine actions),
+ * 6 fight capped (turn_cap), 7 decision capped (decision_cap), 8 practice end (a practice
+ * episode's first decision outside combat: a truncation) */
 const uint8_t *sts2_run_envs_end_ptr(const Sts2RunEnvs *envs);
 const uint16_t *sts2_run_envs_floor_ptr(const Sts2RunEnvs *envs);
+/* dedupe: len x actions member counts of each kept index's class (0 elsewhere) */
+const uint8_t *sts2_run_envs_class_counts_ptr(const Sts2RunEnvs *envs);
+/* events: len x Sts2RunEvents for the last step */
+const Sts2RunEvents *sts2_run_envs_events_ptr(const Sts2RunEnvs *envs);
+/* Practice starts (ABI 7, sts2_rl::practice). Cells by index: ELITE_ACT1-3, BOSS_ACT1-3. */
+typedef struct Sts2PracticeConfig {
+    uint64_t slots;      /* envs 0..slots start practice when their episode ends */
+    uint32_t weights[6]; /* relative weight of each cell for one start */
+    uint32_t pool;       /* snapshots kept per cell (the most recent) */
+    uint32_t max_uses;   /* starts per snapshot (0: no limit) */
+    uint32_t min_active; /* entries a cell needs to be drawn from */
+    uint32_t capture;    /* 1: normal runs capture snapshots */
+    uint64_t seed;       /* the draws' and reseeds' seed (read when first set) */
+} Sts2PracticeConfig;
+
+typedef struct Sts2PracticeStats {
+    uint64_t pool[6], captured[6], evicted[6], used_up[6], wanted[6], started[6],
+        fell_back[6], to_run[6], bad_start[6];
+} Sts2PracticeStats;
+
+/* NULL config: off (the pool stays). */
+int32_t sts2_run_envs_set_practice(Sts2RunEnvs *envs, const Sts2PracticeConfig *config);
+int32_t sts2_run_envs_practice_stats(const Sts2RunEnvs *envs, Sts2PracticeStats *out);
+/* the ended episode's mask and privileged buffer (as final_obs) */
+const uint64_t *sts2_run_envs_final_mask_ptr(const Sts2RunEnvs *envs);
+const uint8_t *sts2_run_envs_final_priv_ptr(const Sts2RunEnvs *envs);
+/* per env: 0 a normal run, else practice cell index + 1; of the current / just-ended episode */
+const uint8_t *sts2_run_envs_cell_ptr(const Sts2RunEnvs *envs);
+const uint8_t *sts2_run_envs_ended_cell_ptr(const Sts2RunEnvs *envs);
+/* actions x 4 bytes: entity kind, slot, sub-slot, phase (255 any) per run-space index */
+const uint8_t *sts2_run_action_table(void);
+
+/* ABI 11 (RLN29): the content stats, `sts2_rl::content_stats` (0 cards, 1 cards upgraded,
+ * 2 relics, 3 potions): rows x width int16 by vocab id; the columns as "name:m|f,...". */
+const int16_t *sts2_content_stats(uint32_t table, size_t *rows);
+const char *sts2_content_stats_columns(void);
 
 #ifdef __cplusplus
 }

@@ -82,7 +82,7 @@ impl Hooks for WongosMysteryTicket {
 
     /// `AfterCombatEnd`: `CombatsFinished++` (the `RemainingCombats` var is text only).
     fn after_combat_end(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        data_mut(&mut eng.s.relic_mut(me).data).combats_finished += 1;
+        data_mut(eng.s.relic_data_mut(me)).combats_finished += 1;
         Ok(())
     }
 }

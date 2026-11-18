@@ -34,7 +34,7 @@ impl Hooks for IronClub {
     type Me = RelicId;
 
     fn after_card_played(&self, eng: &mut Engine<'_>, me: RelicId, _play: &CardPlay) -> Flow {
-        let RelicData::IronClub(data) = &mut eng.s.relic_mut(me).data else {
+        let RelicData::IronClub(data) = eng.s.relic_data_mut(me) else {
             unreachable!("an IronClub has IronClub data");
         };
         data.cards_played += 1;

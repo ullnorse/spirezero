@@ -11,7 +11,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-sts2-core = { path = "../sts2-core" }
+# `testing`: `Combat::edit`, for the solver's forced opening hands and enemy HP.
+sts2-core = { path = "../sts2-core", features = ["testing"] }
 sts2-rl = { path = "../sts2-rl" }
 serde_json = { version = "1", features = ["preserve_order"] }
 

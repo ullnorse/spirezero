@@ -1,5 +1,5 @@
 """WEB32 real-input test. One Chrome (CDP port $CDP_PORT) loads the real page from $URL (no ?proof=) and plays
-runs with real touch/mouse/wheel/key input at a phone (390x664) and a desktop (1440x900) size. After every action it
+runs with real touch/mouse/wheel/key input at a phone (390x664) and a desktop (1280x800) size. After every action it
 compares the DOM with the engine's view (window.sts2.view()) and asserts the layout holds still.
 Output: $OUT/results.txt (one line per check), screenshots in $OUT. Exit 1 on any failure.
 Usage: realtest.py [phone|desktop]... (both by default)"""
@@ -18,7 +18,7 @@ URL = os.environ.get("URL", "http://127.0.0.1:8765/")
 OUT = os.environ.get("OUT", "target/web32")
 BUDGET = float(os.environ.get("BUDGET", 420))  # seconds per viewport
 SEEDS = ["WEBTEST1", "WEBTEST2", "WEBTEST3", "WEBTEST4", "WEBTEST5", "WEBTEST6", "WEBTEST7", "WEBTEST8"]
-SIZES = {"phone": (390, 664, True), "desktop": (1440, 900, False), "small": (320, 568, True)}
+SIZES = {"phone": (390, 664, True), "desktop": (1280, 800, False), "small": (320, 568, True)}
 results = []
 VIEWPORT = [None]
 
@@ -82,7 +82,7 @@ CONTROL_AT = "(() => {" + _CTL + " return window.__ctlAt(%s, %s); })()"
 CONTROLS = "(() => {" + _CTL + " return window.__ctlAll(); })()"
 # Why a control is not pressed by the test, by key: the first matching pattern wins (filled in by the list the test prints).
 UNTOUCHED_WHY = [
-    (r"hintbtn", "why not: the bot's hint overlay (bot.js, own checks); it changes no game state"),
+    (r"askbot", "why not: the bot hint toggle (bot.js, web77 checks); it changes no game state"),
     (r"relic\.pic|pot\.pic", "why not: a top-bar relic or potion out of a fight only opens its sheet; pressed in a fight (potion_use) and by the hold/sheet checks"),
     (r"iconbtn\.close", "pressed in menu_tiles; other sheets close the same way"),
     (r"iconbtn ", "why not: the same top-bar button is pressed where it matters (deck_counts, map sheet, menu_tiles)"),
@@ -495,6 +495,10 @@ class Run:
         bad = cmp_stable(before, f3) if alive(before) == alive(f3) else []
         if bad:
             self.check("layout holds after playing a card", False, f"{name}: " + "; ".join(bad[:3]))
+        if self.touch:
+            li = p.js("(() => { const e = document.querySelector('#screen .you .incline'); return e && { t: e.textContent, cut: e.scrollWidth > e.clientWidth + 1, h: Math.round(e.getBoundingClientRect().height) }; })()")
+            ok = bool(li) and re.match(r"Incoming \d+ · Block \d+", li["t"]) and not li["cut"]
+            self.check("incoming line: 'Incoming N · Block B' whole on one line", ok, f"{name}: {li}")
         self.verify(f"playing {name} ({mode})")
         return v3
 

@@ -14,10 +14,17 @@ use sts2_ffi::{
     sts2_abi_version, sts2_build_id, sts2_envs_done_ptr, sts2_envs_free, sts2_envs_len,
     sts2_envs_mask_ptr, sts2_envs_new, sts2_envs_new_from_corpus, sts2_envs_obs_bytes,
     sts2_envs_obs_ptr, sts2_envs_reset_all, sts2_envs_static_ptr, sts2_envs_stats, sts2_envs_step,
-    sts2_envs_won_ptr, sts2_last_error, sts2_layout, sts2_run_envs_done_ptr, sts2_run_envs_end_ptr,
-    sts2_run_envs_floor_ptr, sts2_run_envs_free, sts2_run_envs_len, sts2_run_envs_mask_ptr,
-    sts2_run_envs_new, sts2_run_envs_obs_ptr, sts2_run_envs_reset_all, sts2_run_envs_stats,
-    sts2_run_envs_step, sts2_run_envs_won_ptr, sts2_run_layout, sts2_vocab_hash,
+    sts2_envs_won_ptr, sts2_last_error, sts2_layout, sts2_run_action_table,
+    sts2_run_envs_class_counts_ptr, sts2_run_envs_done_ptr, sts2_run_envs_end_ptr,
+    sts2_run_envs_events_ptr, sts2_run_envs_floor_ptr, sts2_run_envs_free, sts2_run_envs_len,
+    sts2_run_envs_mask_ptr, sts2_run_envs_new, sts2_run_envs_obs_ptr, sts2_run_envs_priv_ptr,
+    sts2_run_envs_reset_all, sts2_run_envs_stats, sts2_run_envs_step, sts2_run_envs_won_ptr,
+    sts2_run_layout, sts2_vocab_hash,
+};
+use sts2_ffi::{
+    Sts2PracticeConfig, Sts2PracticeStats, sts2_run_envs_cell_ptr, sts2_run_envs_ended_cell_ptr,
+    sts2_run_envs_final_mask_ptr, sts2_run_envs_final_priv_ptr, sts2_run_envs_practice_stats,
+    sts2_run_envs_set_practice,
 };
 use sts2_rl::action::nth_set;
 use sts2_rl::invariants::{check_mask_bits, check_run_mask_bits};
@@ -261,6 +268,17 @@ const fn range_config(start: u64, end: u64, combat: u32) -> Sts2RunConfig {
         ascension: 0,
         combat,
         intents: 1,
+        dedupe: 0,
+        turn_cap: 0,
+        decision_cap: 0,
+        events: 0,
+        counters: 0,
+        priv_obs: 0,
+        obs_v2: 0,
+        obs_full: 0,
+        discard_potion: 0,
+        plan_depth: 0,
+        obs_events: 0,
     }
 }
 
@@ -407,6 +425,175 @@ fn run_env_errors_are_codes() {
             STS2_ERR_ILLEGAL
         );
         assert_eq!(sts2_run_envs_step(envs, ptr::null(), 2), STS2_ERR_NULL);
+        sts2_run_envs_free(envs);
+    }
+}
+
+#[test]
+fn the_end_to_end_options_reach_the_run_env() {
+    let config = Sts2RunConfig {
+        character: 4,
+        ascension: 10,
+        dedupe: 1,
+        turn_cap: 100,
+        decision_cap: 6_000,
+        events: 1,
+        counters: 1,
+        priv_obs: 1,
+        ..range_config(23_000_000, 23_000_040, 0)
+    };
+    // SAFETY: `config` is readable.
+    let envs = unsafe { sts2_run_envs_new(4, &raw const config, 2) };
+    assert!(!envs.is_null(), "{}", last_error());
+    let n = 4;
+    let mut rng = Rng(11);
+    let mut actions = vec![0_u16; n];
+    let (mut merged, mut floors) = (0, 0_u64);
+    let mut layout = Sts2RunLayout::default();
+    // SAFETY: `layout` is writable.
+    assert_eq!(unsafe { sts2_run_layout(&raw mut layout) }, STS2_OK);
+    let priv_bytes = usize::try_from(layout.priv_bytes).expect("fits");
+    assert!(priv_bytes > 0);
+    let mut priv_seen = false;
+    for _ in 0..3_000 {
+        // SAFETY: the privileged buffer has `n × priv_bytes` bytes; nothing writes it meanwhile.
+        let privs =
+            unsafe { std::slice::from_raw_parts(sts2_run_envs_priv_ptr(envs), n * priv_bytes) };
+        priv_seen |= privs.iter().any(|&b| b != 0);
+        // SAFETY: the mask buffer has `n × RUN_MASK_WORDS` words and the class counts
+        // `n × RUN_ACTIONS` bytes; nothing writes them meanwhile.
+        let (masks, counts) = unsafe {
+            (
+                std::slice::from_raw_parts(sts2_run_envs_mask_ptr(envs), n * RUN_MASK_WORDS),
+                std::slice::from_raw_parts(sts2_run_envs_class_counts_ptr(envs), n * RUN_ACTIONS),
+            )
+        };
+        let mut live = false;
+        for (i, action) in actions.iter_mut().enumerate() {
+            let bits = &masks[i * RUN_MASK_WORDS..][..RUN_MASK_WORDS];
+            let count: u32 = bits.iter().map(|w| w.count_ones()).sum();
+            if count == 0 {
+                continue;
+            }
+            live = true;
+            assert!(count >= 2, "one class reaches no agent");
+            for a in 0..RUN_ACTIONS {
+                let set = bits[a / 64] >> (a % 64) & 1 == 1;
+                assert_eq!(set, counts[i * RUN_ACTIONS + a] > 0, "index {a}");
+            }
+            let nth = u32::try_from(rng.next() % u64::from(count)).expect("below count");
+            *action = u16::try_from(nth_set(bits, nth).expect("below count")).expect("small");
+        }
+        if !live {
+            break;
+        }
+        // SAFETY: `actions` has `n` aligned `u16`s.
+        let code = unsafe { sts2_run_envs_step(envs, actions.as_ptr(), n) };
+        assert!(code >= 0, "{}", last_error());
+        let mut stats = Sts2RunStepStats::default();
+        // SAFETY: `envs` is live, `stats` writable, the events buffer has `n` records.
+        let events = unsafe {
+            assert_eq!(sts2_run_envs_stats(envs, &raw mut stats), STS2_OK);
+            std::slice::from_raw_parts(sts2_run_envs_events_ptr(envs), n)
+        };
+        merged += stats.merged;
+        floors += events.iter().map(|e| u64::from(e.floors)).sum::<u64>();
+        assert!(stats.saturated[0] <= stats.decisions);
+    }
+    assert!(merged > 0 && floors > 0, "merged {merged}, floors {floors}");
+    assert!(priv_seen, "the privileged buffer was never written");
+    // SAFETY: the table has `RUN_ACTIONS × 4` bytes for the library's lifetime.
+    let table = unsafe { std::slice::from_raw_parts(sts2_run_action_table(), RUN_ACTIONS * 4) };
+    assert_eq!(
+        &table[..4],
+        &[0, 0, 0, 3],
+        "index 0 plays hand slot 0 untargeted in a fight"
+    );
+    // SAFETY: `envs` is freed once.
+    unsafe { sts2_run_envs_free(envs) };
+}
+
+#[test]
+fn practice_is_set_and_counted_through_the_abi() {
+    let config = Sts2RunConfig {
+        character: 4,
+        combat: 1,
+        events: 1,
+        priv_obs: 1,
+        ..range_config(500, 100_000, 0)
+    };
+    let n = 4;
+    // SAFETY: `config` is readable.
+    let envs = unsafe { sts2_run_envs_new(n, &raw const config, 1) };
+    assert!(!envs.is_null(), "{}", last_error());
+    let mut stats = Sts2PracticeStats::default();
+    // SAFETY: `envs` is the live batch; every pointer read below has `n` entries (masks
+    // `n × RUN_MASK_WORDS`); nothing writes them meanwhile.
+    unsafe {
+        assert_eq!(sts2_run_envs_practice_stats(envs, &raw mut stats), STS2_OK);
+        assert_eq!(
+            stats,
+            Sts2PracticeStats::default(),
+            "zero before practice is set"
+        );
+        assert_eq!(
+            sts2_run_envs_practice_stats(envs, ptr::null_mut()),
+            STS2_ERR_NULL
+        );
+        for p in [
+            sts2_run_envs_cell_ptr(envs),
+            sts2_run_envs_ended_cell_ptr(envs),
+            sts2_run_envs_final_priv_ptr(envs),
+        ] {
+            assert!(!p.is_null());
+        }
+        assert!(!sts2_run_envs_final_mask_ptr(envs).is_null());
+        let practice = Sts2PracticeConfig {
+            slots: 2,
+            weights: [1, 1, 1, 1, 1, 1],
+            pool: 8,
+            max_uses: 0,
+            min_active: 1,
+            capture: 1,
+            seed: 3,
+        };
+        assert_eq!(
+            sts2_run_envs_set_practice(envs, &raw const practice),
+            STS2_OK
+        );
+        let mut rng = Rng(5);
+        let mut actions = vec![0_u16; n];
+        let mut cells_seen = false;
+        for _ in 0..150 {
+            let masks =
+                std::slice::from_raw_parts(sts2_run_envs_mask_ptr(envs), n * RUN_MASK_WORDS);
+            for (i, a) in actions.iter_mut().enumerate() {
+                let bits = &masks[i * RUN_MASK_WORDS..][..RUN_MASK_WORDS];
+                let count: u32 = bits.iter().map(|w| w.count_ones()).sum();
+                *a = if count == 0 {
+                    0
+                } else {
+                    let nth = u32::try_from(rng.next() % u64::from(count)).expect("small");
+                    u16::try_from(nth_set(bits, nth).expect("set")).expect("small")
+                };
+            }
+            assert!(
+                sts2_run_envs_step(envs, actions.as_ptr(), n) >= 0,
+                "{}",
+                last_error()
+            );
+            let cells = std::slice::from_raw_parts(sts2_run_envs_cell_ptr(envs), n);
+            assert!(cells.iter().all(|&c| c <= 6));
+            assert!(
+                cells[2..].iter().all(|&c| c == 0),
+                "only slots 0..2 practise"
+            );
+            cells_seen |= cells.iter().any(|&c| c > 0);
+        }
+        assert_eq!(sts2_run_envs_practice_stats(envs, &raw mut stats), STS2_OK);
+        assert!(stats.captured.iter().sum::<u64>() > 0, "{stats:?}");
+        assert!(cells_seen, "{stats:?}");
+        assert_eq!(sts2_run_envs_set_practice(envs, ptr::null()), STS2_OK);
         sts2_run_envs_free(envs);
     }
 }

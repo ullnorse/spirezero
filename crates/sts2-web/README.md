@@ -21,6 +21,13 @@ Game text: `serve.sh` links `~/.cache/spirezero-data/text` (from `cargo xtask ar
 `www/text` (git-ignored; never commit game text). Without it, names come from the engine. Settings
 on the start screen show how many tables loaded.
 
+Combat net (WEB82): `serve.sh` links `~/.cache/spirebot-data/net` in as `www/net` (git-ignored;
+`deploy.sh` links it into each release). It holds `cb3.bin`, the CB3 combat net's EMA weights
+(~29 MB), written from a training checkpoint by `python/web82_export.py export <ckpt> <out>`. Where
+it is served, the top bar gets "Net plays fights" (the net plays every fight decision, lit like a
+hint, then played after a pause; speed in Settings) and "Net: one move". Without it neither button
+shows. `node crates/sts2-web/tools/net_parity.mjs` checks the built wasm against PyTorch's logits.
+
 Offline: the service worker caches the page, the wasm and the text on the first visit. Chrome
 registers a service worker only on `https` or `localhost`, so on a LAN IP the page plays but is
 not installable/offline in Chrome; Safari's Add to Home Screen works on plain http. For the full
@@ -175,7 +182,7 @@ player sees, as in `sts2-diff bot`; `the_web_bot_and_its_reasons_do_not_read_hid
 
 `proof.sh`'s real-time bot scenarios run through `cdp.py` (stdlib DevTools client: the worker
 needs real time): `botask`, `botchoice`, `botmap`, `botshop`, `botodds`, `botrun`, `botwatch`,
-`botwatchplay`, `botstart`.
+`botwatchplay`.
 
 ## Combat numbers, feedback and practice (WEB11)
 `www/combatfx.js` (+ `combatfx.css`) holds all of it; `src/fx.rs` is the engine side.

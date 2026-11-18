@@ -30,7 +30,7 @@ impl Hooks for BoneTea {
     type Me = RelicId;
 
     fn after_player_turn_start(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        let RelicData::BoneTea(data) = eng.s.relic(me).data else {
+        let RelicData::BoneTea(data) = *eng.s.relic_data(me) else {
             unreachable!("a BoneTea has BoneTea data");
         };
         // `IsUsedUp`; the only player is the owner.
@@ -41,7 +41,7 @@ impl Hooks for BoneTea {
         for card in eng.s.player.hand.clone() {
             eng.upgrade_card(card);
         }
-        let RelicData::BoneTea(data) = &mut eng.s.relic_mut(me).data else {
+        let RelicData::BoneTea(data) = eng.s.relic_data_mut(me) else {
             unreachable!("a BoneTea has BoneTea data");
         };
         data.combats_left -= 1;

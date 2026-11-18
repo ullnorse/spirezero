@@ -5,6 +5,7 @@
 //! choice is exposed as a [`DecisionRequest`], and answering it restores the pre-action
 //! snapshot and replays the action with the decision log.
 
+mod canon;
 mod card_play;
 pub(crate) mod commands;
 pub mod cost_lists;
@@ -12,6 +13,7 @@ pub mod energy_cost;
 mod engine;
 pub mod history;
 pub(crate) mod hooks;
+pub mod inline_list;
 mod intent;
 mod listeners;
 mod potion_use;
@@ -23,6 +25,7 @@ mod turn;
 use std::fmt;
 
 use crate::shuffle::unstable_shuffle;
+pub use canon::Hash128;
 pub use card_play::{AutoPlayType, CardPlay, ResultPile};
 pub(crate) use card_play::{Resources, ResultLocation};
 use engine::Interrupt;
@@ -35,13 +38,13 @@ use history::CombatHistory;
 pub use history::{HistoryEntry, HistoryKind, HistoryTag, TurnEntries};
 pub use hooks::Hooked;
 use hooks::{Hook, HookSet};
-pub use intent::{AttackIntent, Intent, IntentScratch, IntentType};
+pub use intent::{AttackIntent, ForecastStep, Intent, IntentScratch, IntentType};
 pub use preview::{
     CreatureOutcome, EnemyIncoming, IncomingPreview, PlayOutcome, Preventer, UnplayableReason,
 };
 pub use state::{
     CardId, CombatResult, CombatState, Creature, CreatureId, Creatures, ExtraReward, Orb, OrbId,
-    OrbKind, PileType, Potion, PotionId, PowerId, RelicId, Side, TurnPhase,
+    OrbKind, PileType, Potion, PotionId, PowerId, Powers, RelicId, Relics, Side, TurnPhase,
 };
 
 use crate::content::cards::{CardKeyword, CardKind, TargetType};
@@ -157,6 +160,10 @@ pub struct CombatConfig {
     pub record_events: bool,
     /// The run's modifiers that act inside a fight.
     pub modifiers: crate::run::modifiers::CombatModifiers,
+    /// `TestMode.IsOn`: the referee's mode (`docs/specs/test-mode.md`). Off (the real game) by
+    /// default; the diff harnesses that play against the referee turn it on
+    /// ([`CombatConfig::in_test_mode`]), and a run's fights inherit its `test_mode`.
+    pub test_mode: bool,
 }
 
 impl CombatConfig {
@@ -208,6 +215,7 @@ impl CombatConfig {
             map_coord: None,
             record_events: false,
             modifiers: crate::run::modifiers::CombatModifiers::default(),
+            test_mode: false,
         })
     }
 
@@ -219,6 +227,13 @@ impl CombatConfig {
     pub fn necrobinder(seed: &str, ascension: u8) -> Self {
         Self::new(Character::Necrobinder, seed, ascension)
             .expect("every Necrobinder starter card is ported")
+    }
+
+    /// The same, in the referee's `TestMode.IsOn` mode.
+    #[must_use]
+    pub const fn in_test_mode(mut self) -> Self {
+        self.test_mode = true;
+        self
     }
 
     /// The same, recording events.
@@ -372,6 +387,9 @@ struct Pending {
     decisions: Vec<Decision>,
     /// The event count before the step started.
     events_len: usize,
+    /// The solver's chance outcomes the step consumed before the prompt, replayed when it
+    /// resumes ([`crate::rng::chance`]); empty in normal play.
+    chance: Vec<u32>,
 }
 
 impl_clone_by_fields!(Pending {
@@ -379,6 +397,7 @@ impl_clone_by_fields!(Pending {
     step,
     decisions,
     events_len,
+    chance,
 });
 
 /// Whether every completed step is re-run from its snapshot and checked against the direct
@@ -675,6 +694,9 @@ impl Combat {
                 };
                 let step = pending.step;
                 let events_len = pending.events_len;
+                if self.state.chance_scripted() {
+                    crate::rng::chance::resume(&pending.chance);
+                }
                 let mut decisions = std::mem::take(&mut pending.decisions);
                 self.spare = Some(pending);
                 decisions.push(Decision::Cards(cards));
@@ -771,11 +793,15 @@ impl Combat {
             refill(&mut self.snapshot, &self.state);
         }
         let events_len = self.events.as_ref().map_or(0, Vec::len);
+        let chance_mark = self.state.chance_scripted().then(crate::rng::chance::mark);
         match execute(&mut self.state, self.events.as_mut(), &step, &decisions)
             .map_err(|interrupt| *interrupt)
         {
             Ok(()) => {
                 if REPLAY_CHECK {
+                    if let Some(mark) = chance_mark {
+                        crate::rng::chance::rewind(mark);
+                    }
                     self.check_replay(events_len, &step, &decisions);
                 }
                 self.pending = None;
@@ -790,6 +816,7 @@ impl Combat {
                     step,
                     decisions,
                     events_len,
+                    chance: chance_mark.map_or_else(Vec::new, crate::rng::chance::consumed_since),
                 };
                 self.pending = Some(match self.spare.take() {
                     Some(mut to) => {
@@ -935,6 +962,12 @@ impl Combat {
         result
     }
 
+    /// Hands every random stream of the fight to the solver's chance script, or back to
+    /// xoshiro ([`crate::rng::chance`], `docs/specs/solver.md`).
+    pub fn set_chance_scripted(&mut self, scripted: bool) {
+        self.state.set_chance_scripted(scripted);
+    }
+
     /// A copy of this combat with what the player cannot see resampled: the draw and discard
     /// pile order and the RNG streams (the run's and each monster's), seeded from `seed`. The
     /// hand, HP, powers, intents, relics and pile contents stay as they are. For honest search:
@@ -957,6 +990,47 @@ impl Combat {
             }
         }
         combat
+    }
+
+    /// Hides in place what the player of this fight cannot know, for an honest copy to search
+    /// on: the order of the draw pile and the random streams that decide the rest of the fight.
+    /// Everything the player sees stays: the hand, the discard and exhaust piles (in order), the
+    /// draw pile's contents, HP, Block, powers, energy, relics, potions and the intents already
+    /// shown (a monster's next move is stored, not rolled again). Deterministic in `seed`.
+    ///
+    /// Streams, after `RunRngSet.cs` (which says what each one decides):
+    /// - Reseeded: `Shuffle` (draw-pile reshuffles), the `Combat*` streams (card, potion and orb
+    ///   generation, random card selection, random energy costs, random targets), `MonsterAi`
+    ///   and `Niche` (in combat it rolls things such as unique monster HP), and each monster's
+    ///   own `MonsterModel.Rng`. The set's seed changes too, so a monster summoned later gets a
+    ///   stream ([`monster_rng`]) the player cannot know either.
+    /// - Kept: `UpFront`, `UnknownMapPoint` and `TreasureRoomRelics`. No combat draws on them (they
+    ///   decide the run's layout, unknown map rooms and shared treasure), so keeping them hides
+    ///   nothing and leaves those parts of the run as they were.
+    ///
+    /// The draw pile is put in card order and then shuffled, so the copy depends on the real
+    /// order not at all. A card the player saw put on top of the draw pile is shuffled too.
+    /// What derives from the run seed after the fight (events, `FurCoat`) also differs in the
+    /// copy; it is for searching this fight, not for playing the run on.
+    pub fn determinize(&mut self, seed: u64) {
+        let mut rng = RunRngSet::new(&format!("DETERMINIZE{seed}"));
+        for kept in [
+            RunRngType::UpFront,
+            RunRngType::UnknownMapPoint,
+            RunRngType::TreasureRoomRelics,
+        ] {
+            rng[kept].clone_from(&self.state.rng[kept]);
+        }
+        let base = rng.seed();
+        self.state.rng = rng;
+        for (i, creature) in self.state.creatures.iter_mut().enumerate() {
+            if let Some(monster) = &mut creature.monster {
+                monster.rng = Rng::named(base, &format!("monster{i}"));
+            }
+        }
+        let draw = &mut self.state.player.draw;
+        draw.sort_unstable();
+        unstable_shuffle(&mut draw[..], &mut Rng::named(base, "draw"));
     }
 
     /// The part of [`Combat::edit`] after the change.
@@ -1142,6 +1216,7 @@ fn set_up(config: CombatConfig) -> CombatState {
         map_coord,
         record_events: _,
         modifiers,
+        test_mode,
     } = config;
     assert!(
         potions.len() <= potion_slots,
@@ -1156,6 +1231,10 @@ fn set_up(config: CombatConfig) -> CombatState {
     let cards = combat_cards(&deck);
     let draw = cards.iter().map(|c| c.id).collect();
     let monsters = encounter.generate_monsters(&rng, total_floor);
+    let mut relic_data = state::RelicDataTable::default();
+    for (relic, i) in relics.iter().zip(0..) {
+        relic_data.set(RelicId(i), relic.data);
+    }
     let mut state = CombatState {
         rng,
         ascension,
@@ -1172,8 +1251,7 @@ fn set_up(config: CombatConfig) -> CombatState {
             hp: player_hp,
             max_hp: player_max_hp,
             block: 0,
-            powers: Vec::new(),
-            removed_powers: Vec::new(),
+            powers: Powers::new(),
             power_kinds: PowerKinds::default(),
             hooks: HookSet::EMPTY,
             monster_hooks: HookSet::EMPTY,
@@ -1199,7 +1277,6 @@ fn set_up(config: CombatConfig) -> CombatState {
                 .map(|(relic, i)| Relic {
                     id: RelicId(i),
                     kind: relic.kind,
-                    data: relic.data,
                     melted: relic.melted,
                 })
                 .collect(),
@@ -1222,8 +1299,11 @@ fn set_up(config: CombatConfig) -> CombatState {
         cards,
         cost_lists: CostLists::default(),
         power_data: state::PowerDataTable::default(),
+        relic_data,
+        removed_powers: Vec::new(),
         in_progress: false,
         modifiers,
+        test_mode,
         starting: true,
         pending_loss: false,
         result: None,
@@ -1322,8 +1402,7 @@ pub(crate) fn create_enemy(
         hp,
         max_hp: hp,
         block: 0,
-        powers: Vec::new(),
-        removed_powers: Vec::new(),
+        powers: Powers::new(),
         power_kinds: PowerKinds::default(),
         hooks: HookSet::EMPTY,
         monster_hooks: HookSet::EMPTY,
@@ -1347,7 +1426,10 @@ pub(crate) fn monster_rng(state: &CombatState, id: CreatureId) -> Rng {
         .wrapping_add(i64::from(row))
         .wrapping_add(i64::from(state.act_index))
         .wrapping_add(i64::from(id.0));
-    Rng::new(seed.cast_unsigned())
+    let mut rng = Rng::new(seed.cast_unsigned());
+    // A monster summoned while the solver enumerates chance rolls through the script too.
+    rng.set_scripted(state.chance_scripted());
+    rng
 }
 
 /// `Creature.SetUniqueMonsterHpValue` (`Creature.cs:372-384`): pick from `min..=max` minus the

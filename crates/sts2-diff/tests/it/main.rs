@@ -5,3 +5,4 @@ mod fixtures;
 mod honest;
 mod reach;
 mod run_gen;
+mod solve;

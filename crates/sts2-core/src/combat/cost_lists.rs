@@ -397,4 +397,15 @@ impl CombatState {
         let (energy, star) = self.card_mut(card).upgrade_internal();
         self.cost_lists.apply_upgrade(card, energy, star);
     }
+
+    /// The list half of an `UpgradeBy` made outside an upgrade (an enchantment's `OnEnchant`):
+    /// the game caps the absolute modifiers at the moment of the call.
+    pub(crate) fn apply_pending_cost_caps(&mut self, card: CardId) {
+        let c = self.card_mut(card);
+        let (energy, star) = (
+            c.energy_cost.upgrade_cap.take(),
+            c.star_cost.upgrade_cap.take(),
+        );
+        self.cost_lists.apply_upgrade(card, energy, star);
+    }
 }

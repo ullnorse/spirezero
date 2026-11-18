@@ -611,10 +611,7 @@ impl Engine<'_> {
             .map(|p| p.id)
             .collect();
         let removed = self.s.take_powers_where(id, |p| gone.contains(&p.id));
-        self.s
-            .creature_mut(id)
-            .removed_powers
-            .extend(removed.iter().copied());
+        self.s.keep_removed(id, &removed);
         if removed.iter().any(|p| p.kind == PowerKind::Minion) {
             self.s.recount_enemies();
         }

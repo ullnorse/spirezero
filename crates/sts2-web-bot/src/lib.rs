@@ -1,6 +1,7 @@
 //! The honest bot in the browser (WEB10): the web client's "?" ([`Advisor`]), the bot playing
 //! the player's seed ([`Watch`]) and where the player's choices differed from its own
-//! ([`differ`]), and the review of a finished run ([`review`]).
+//! ([`differ`]), the review of a finished run ([`review`]) and the CB3 combat net playing the
+//! player's fights ([`fights`], [`net`]).
 //!
 //! It is its own wasm, loaded on demand by the page's Web Worker (`www/bot-worker.js`): the
 //! bot's nets (`include_bytes`, about 7 MB) stay out of the page's wasm. The fights are the
@@ -18,6 +19,8 @@ use sts2_diff::honest::advice::{PHONE, Why};
 use sts2_web::{Game, parse_modifiers};
 use wasm_bindgen::prelude::wasm_bindgen;
 
+pub mod fights;
+pub mod net;
 pub mod review;
 
 /// A run is stopped after this many actions (as the bot's runs: `sts2_diff::honest::MAX_ACTIONS`).
@@ -187,6 +190,8 @@ pub struct Watch {
     mine: Vec<u32>,
     /// Whether the bot has left the player's path.
     split: bool,
+    /// A recorded run's actions, played instead of the bot's own choices ([`Watch::script`]).
+    script: Option<Vec<u32>>,
 }
 
 #[wasm_bindgen]
@@ -208,7 +213,18 @@ impl Watch {
             game: Game::new(character, seed, ascension, &parse_modifiers(modifiers)?)?,
             mine: parse_actions(mine)?,
             split: false,
+            script: None,
         })
+    }
+
+    /// Plays `actions` (JSON, as [`Game::actions`] lists them) instead of the bot's choices: the
+    /// frames are the same, with each move's label and no reason.
+    ///
+    /// # Errors
+    /// `actions` is not a list.
+    pub fn script(&mut self, actions: &str) -> Result<(), String> {
+        self.script = Some(parse_actions(actions)?);
+        Ok(())
     }
 
     /// The start, as a frame (see [`Watch::step`]).
@@ -223,6 +239,9 @@ impl Watch {
     #[must_use]
     pub fn step(&mut self) -> String {
         let step = self.game.actions().len();
+        if let Some(script) = &self.script {
+            return self.scripted_step(script.get(step).copied(), step);
+        }
         let chosen = (step < MAX_ACTIONS)
             .then(|| choose(bot(), &self.game))
             .flatten();
@@ -258,6 +277,37 @@ impl Watch {
         if !split.is_null() {
             frame["split"] = split;
         }
+        if self.game.is_over() {
+            frame["done"] = Value::Bool(true);
+            frame["outcome"] = outcome(&self.game);
+        }
+        frame.to_string()
+    }
+}
+
+impl Watch {
+    /// [`Watch::step`] for a script: the action `index` (`None` at its end), applied alone, as a
+    /// replay applies it.
+    fn scripted_step(&mut self, index: Option<u32>, step: usize) -> String {
+        let action = index.and_then(|i| self.game.recordable_actions().into_iter().nth(i as usize));
+        let Some(action) = action else {
+            return json!({
+                "view": view_of(&mut self.game),
+                "step": step,
+                "done": true,
+                "outcome": outcome(&self.game),
+            })
+            .to_string();
+        };
+        let shown_move = shown(&self.game, &action, None);
+        if let Some(index) = index
+            && let Err(e) = self.game.advance(&[index])
+        {
+            return json!({ "view": view_of(&mut self.game), "step": step, "done": true, "error": e })
+                .to_string();
+        }
+        let mut frame =
+            json!({ "view": view_of(&mut self.game), "step": step + 1, "move": shown_move });
         if self.game.is_over() {
             frame["done"] = Value::Bool(true);
             frame["outcome"] = outcome(&self.game);
@@ -363,6 +413,30 @@ mod tests {
         let first = tapped.actions().get(game.actions().len()).copied();
         let index = game.recordable_actions().iter().position(|a| *a == action);
         assert_eq!(first.map(|i| i as usize), index, "{v}");
+    }
+
+    #[test]
+    fn a_scripted_watch_plays_the_recorded_win() {
+        // `www/watch/necro1-24000969.json`: NECRO1's eval win as web actions
+        // (`cargo run -p sts2-web --example watch_convert`).
+        let file: Value = serde_json::from_str(include_str!(
+            "../../sts2-web/www/watch/necro1-24000969.json"
+        ))
+        .expect("json");
+        let script = file["actions"].to_string();
+        let seed = file["seed"].as_str().expect("seed");
+        let character =
+            usize::try_from(file["character"].as_u64().expect("character")).expect("small");
+        let mut watch = Watch::new(character, seed, 10, "", "[]").expect("watch");
+        watch.script(&script).expect("a list");
+        let mut last = Value::Null;
+        for _ in 0..file["actions"].as_array().expect("list").len() {
+            last = serde_json::from_str(&watch.step()).expect("json");
+            assert!(last.get("error").is_none(), "{last}");
+        }
+        assert_eq!(last["done"], true);
+        assert_eq!(last["outcome"]["end"], "victory");
+        assert_eq!(last["outcome"]["floor"], 49);
     }
 
     #[test]

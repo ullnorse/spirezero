@@ -15,6 +15,8 @@ smallvec = { version = "1.15", features = ["union", "const_generics"] }
 [features]
 # `Combat::edit` for other crates' tests (the RL observation's leak test).
 testing = []
+# Every inline list capacity is 1, so every list spills (the forced-spill gate).
+tiny-caps = []
 
 [lints]
 workspace = true

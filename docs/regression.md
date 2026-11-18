@@ -118,6 +118,12 @@ run loadouts alone reach 497/558 cards, 64/64 potions and 231/242 powers; `tools
 reports the rest. Relic triggers are not attributed by the event log yet, so a relic remains
 presence-only.
 
+Act-jump coverage passes (200 seeds, greedy):
+
+| Date | Loadout | Command | Match | Reached | Notes |
+|---|---|---|---|---|---|
+| 2026-11-08 (RLN3) | `act_loadouts/glory-necrobinder-a10-second-boss.json` (synthetic, 600 HP) | `POLICY=greedy ASC=10 SEED_PREFIX=RLN3S RUN_LOADOUT=... tools/diff_run.sh 200` | 200/200 | Act 3 boss 132, **A10 second boss 131** (124 beaten) | The rest stopped before the boss: 39 on referee-side events (`FAKE_MERCHANT` 23, `CRYSTAL_SPHERE` 16, see `REFEREE_SKIPPED_EVENTS`/`REFEREE_BROKEN_OPTIONS`), 31 died (15 on floors 6-8 in an Axebot respawn stall of the greedy policy), 3 `max_actions`, 3 other referee stops. No `FUR_COAT` in the loadout: with two Fur Coats (loadout plus the Nonupeipe ancient's) 2 of 200 seeds diverged on which fights are set to 1 HP; a run cannot hold two. |
+
 Multiplayer-only entities and the ids in `docs/coverage-exclusions.md` are not counted. A zero
 hit is a failure unless it is in `docs/hits-allowlist.md` with a reason (`--check` enforces it).
 

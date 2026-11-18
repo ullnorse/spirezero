@@ -79,7 +79,7 @@ impl Hooks for Girya {
 
     fn after_room_entered(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
         // `room is CombatRoom`: the combat only dispatches this hook for its own room.
-        let RelicData::Girya(data) = eng.s.relic(me).data else {
+        let RelicData::Girya(data) = *eng.s.relic_data(me) else {
             unreachable!("a Girya has Girya data");
         };
         if data.times_lifted > 0 {

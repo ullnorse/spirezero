@@ -647,3 +647,18 @@ fn wongos_mystery_ticket_gives_three_relics_after_five_combats() {
     assert_eq!(run.state.relics[me].data, ticket(5, true));
     assert!(RelicKind::WongosMysteryTicket.is_used_up(&run.state.relics[me].data));
 }
+
+#[test]
+fn the_future_of_potions_locks_the_belt() {
+    let run = in_event(EventKind::TheFutureOfPotions, |s| {
+        s.potions[0] = Some("FIRE_POTION");
+        s.potions[1] = Some("BLOCK_POTION");
+    });
+    assert!(run.discard_actions().is_empty(), "the belt is locked");
+    assert!(run.potion_actions().is_empty(), "no potion use either");
+    let mut trade = run;
+    trade
+        .apply(RunAction::EventOption(1))
+        .expect("trade the block potion");
+    assert_eq!(trade.state.potions[1], None);
+}

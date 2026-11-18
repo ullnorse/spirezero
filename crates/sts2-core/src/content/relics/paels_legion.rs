@@ -27,14 +27,14 @@ pub struct Data {
 }
 
 fn data(s: &CombatState, me: RelicId) -> Data {
-    let RelicData::PaelsLegion(data) = s.relic(me).data else {
+    let RelicData::PaelsLegion(data) = *s.relic_data(me) else {
         unreachable!("a PaelsLegion has PaelsLegion data");
     };
     data
 }
 
 fn data_mut<'a>(eng: &'a mut Engine<'_>, me: RelicId) -> &'a mut Data {
-    let RelicData::PaelsLegion(data) = &mut eng.s.relic_mut(me).data else {
+    let RelicData::PaelsLegion(data) = eng.s.relic_data_mut(me) else {
         unreachable!("a PaelsLegion has PaelsLegion data");
     };
     data

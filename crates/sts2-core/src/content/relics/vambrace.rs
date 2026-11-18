@@ -18,7 +18,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::Vambrace(data) = &mut s.relic_mut(me).data else {
+    let RelicData::Vambrace(data) = s.relic_data_mut(me) else {
         unreachable!("a Vambrace has Vambrace data");
     };
     data
@@ -57,7 +57,7 @@ impl Hooks for Vambrace {
         if !query.props.has(ValueProps::MOVE) {
             return Decimal::ONE;
         }
-        let RelicData::Vambrace(data) = s.relic(me).data else {
+        let RelicData::Vambrace(data) = *s.relic_data(me) else {
             unreachable!("a Vambrace has Vambrace data");
         };
         if data.triggering_card.is_some_and(|t| t != card) || data.block_gained_this_combat {

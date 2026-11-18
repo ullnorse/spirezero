@@ -11,7 +11,7 @@ const HEROES = ["Ironclad", "Silent", "Defect", "Regent", "Necrobinder"];
 const SPEEDS = [[1, 900], [2, 420], [4, 160], [0.5, 1800]];
 // Frames the worker plays ahead of the screen.
 const AHEAD = 24;
-const KIND = { combat: "Fight", ancient: "Neow", event: "Event", map: "Map", rewards: "Rewards", "card-select": "Card choice", bundles: "Bundles", rest: "Rest site", treasure: "Treasure", shop: "Shop" };
+const KIND = { combat: "Fight", ancient: "Neow", event: "Event", map: "Map", rewards: "Rewards", "card-select": "Card choice", bundles: "Bundles", rest: "Rest Site", treasure: "Treasure", shop: "Shop" };
 
 let w = null; // the watch on screen
 
@@ -48,6 +48,7 @@ export function watch(run) {
   start.hidden = true;
   document.body.classList.add("watching");
   const b = bar();
+  if (run.script) b.classList.add("scripted");
   document.body.append(b);
   document.body.style.setProperty("--watchbar", `${b.getBoundingClientRect().height}px`);
   caption(warm() ? "Starting…" : "Loading the bot…");
@@ -60,7 +61,8 @@ export function watch(run) {
       tick();
     })
     .catch(fail);
-  call("differ", { save: run })
+  if (!run.script)
+    call("differ", { save: run })
     .then((r) => {
       if (w !== me) return;
       w.differ = r;
@@ -117,8 +119,14 @@ function status() {
   if (!f) return;
   const m = f.move;
   const behind = w.playing && !w.queue.length && !w.done;
-  const end = f.done ? `Bot: ${outcomeLine(f.outcome)}` : null;
-  caption(end ?? (m ? m.label : "The bot's run"), end ? null : [m?.why, behind ? "thinking…" : null].filter(Boolean).join(" · "));
+  if (w.run.script) {
+    // A recorded run: the move, and where it is in the run (the same two lines all the way).
+    const end = f.done && f.outcome ? outcomeLine(f.outcome) : null;
+    caption(end ?? (m ? m.label : "Start of the run"), `${f.step}/${w.run.script.length} · ${w.run.title ?? ""}`);
+  } else {
+    const end = f.done ? `Bot: ${outcomeLine(f.outcome)}` : null;
+    caption(end ?? (m ? m.label : "The bot's run"), end ? null : [m?.why, behind ? "thinking…" : null].filter(Boolean).join(" · "));
+  }
   document.querySelector("#watchbar .play").textContent = w.playing ? "❚❚" : "▶";
 }
 
@@ -152,7 +160,7 @@ function bar() {
         e.currentTarget.textContent = `${SPEEDS[w.speed][0] === 0.5 ? "½" : SPEEDS[w.speed][0]}×`;
         tick();
       }),
-      button("wbtn diff", "Where you differed", toggleList),
+      w.run.script ? null : button("wbtn diff", "Where you differed", toggleList),
     ),
   );
   return b;
@@ -219,7 +227,6 @@ function onDraw(kind, v) {
     if (kind === "screen" && w.shown && v !== w.shown.view) S.draw(w.shown.view);
     return;
   }
-  if (kind === "start") return startEntry();
   if (kind !== "screen" || !v?.over || !v.save.actions?.length) return;
   keep(v);
   const main = document.getElementById("screen");
@@ -232,25 +239,9 @@ function onDraw(kind, v) {
   else main.append(go);
 }
 S.hook(onDraw);
-// This module loads after the page's first drawing: a run that has already ended is kept, and the
-// start screen, if it is up, gets its entries.
+// This module loads after the page's first drawing: a run that has already ended is kept.
+// The start screen has no watch entries (it is for playing); History's runs each have one.
 if (S.view()?.over) onDraw("screen", S.view());
-if (!document.getElementById("start").hidden) onDraw("start", S.view());
-
-function startEntry() {
-  const root = document.querySelector("#start .startin");
-  const list = runs().slice(0, 3);
-  if (!root || !list.length || root.querySelector(".watchruns")) return;
-  const box = el("div", "watchruns", el("h3", null, "Watch the bot play your last runs"));
-  for (const r of list) {
-    const b = button("row watchbot", "", () => watch(r));
-    b.append(el("span", "main", el("span", "lab", `${HEROES[r.character] ?? "?"} · ${r.seed}`), el("span", "sub", `${endWord(r.end)}, floor ${r.floor}${r.ascension ? ` · A${r.ascension}` : ""}`)));
-    box.append(b);
-  }
-  const foot = root.querySelector(".foot");
-  if (foot) foot.before(box);
-  else root.append(box);
-}
 
 // The keyboard drives the watch, never the run under it: Space plays or pauses, → steps, Esc exits.
 document.addEventListener(
@@ -266,3 +257,15 @@ document.addEventListener(
   { capture: true },
 );
 window.addEventListener("popstate", () => w && stop());
+
+// A recorded run from a static file: `/?watch=<name>` plays `watch/<name>.json`
+// (`{title, seed, character, ascension, actions}`, the web player's action list; made by
+// `cargo run -p sts2-web --example watch_convert`) in the same viewer, its moves taken from the
+// list instead of the bot.
+const name = new URLSearchParams(location.search).get("watch");
+if (name && /^[\w-]+$/.test(name)) {
+  fetch(new URL(`watch/${name}.json`, import.meta.url))
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`no recorded run ${name}`))))
+    .then((d) => watch({ character: d.character, seed: d.seed, ascension: d.ascension, actions: [], script: d.actions, title: d.title }))
+    .catch((e) => console.error(e));
+}

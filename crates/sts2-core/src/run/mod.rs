@@ -830,6 +830,18 @@ impl Run {
         }
     }
 
+    /// During a fight, [`Combat::determinize`] on it with `seed`; `false` (and no change)
+    /// outside a fight.
+    pub fn determinize_combat(&mut self, seed: u64) -> bool {
+        match &mut self.phase {
+            Phase::Combat(combat) => {
+                combat.determinize(seed);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// During a fight, the run's streams as the fight's [`CombatConfig`] received them;
     /// `None` outside a fight or without [`Run::with_combat_start_streams`].
     #[must_use]
@@ -2299,6 +2311,7 @@ impl Run {
             map_coord: coord.map(|c| (to_i32(c.col), to_i32(c.row))),
             record_events: self.record_events,
             modifiers: modifiers::CombatModifiers::of(&s.modifiers),
+            test_mode: s.test_mode,
         })
     }
 
@@ -2316,7 +2329,7 @@ impl Run {
         self.state.max_hp = player.max_hp;
         self.state.gold = cs.player.gold;
         self.state.potions = potions;
-        relics::write_back(&mut self.state.relics, &cs.player.relics);
+        relics::write_back(&mut self.state.relics, &cs.player.relics, &cs.relic_data);
         // Deck versions the fight changed (`TheScythe.BuffFromPlay`, `ImprovementPower`'s
         // upgrades); the deck itself changes only through `CardPileCmd.RemoveFromDeck` (`SwipePower.Steal`), applied below.
         assert_eq!(

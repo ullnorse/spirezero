@@ -8,8 +8,9 @@
 //! choices take the first options. [`Random`] plays uniformly random legal actions. Both only
 //! ever pick from the legal list they are given, and both are deterministic given the run's seed.
 
+use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::fmt;
+use std::{fmt, mem};
 
 use sts2_core::Combat;
 use sts2_core::combat::{Action, CombatState, Decision, DecisionRequest, Side};
@@ -30,7 +31,7 @@ const POWER_BONUS: i64 = 25;
 /// What a potion is worth beyond its effect when it may be used.
 const POTION_BONUS: i64 = 20;
 /// The most plays a turn plan holds.
-const MAX_PLAYS: usize = 10;
+pub(crate) const MAX_PLAYS: usize = 10;
 /// How many partial plans the search keeps at each depth.
 const BEAM: usize = 3;
 /// Card plays in one turn before [`Random`] only ends the turn (zero-cost loops), as the run
@@ -221,39 +222,88 @@ pub fn whole_choice(combat: &Combat, mut pick: impl FnMut(usize) -> usize) -> Op
 /// turn with the current one (so block and debuffs count through the damage they prevent).
 /// Ending the turn now is the baseline. A winning play ends the search.
 fn plan_turn(combat: &Combat, big_fight: bool, first: &[Action]) -> Vec<Action> {
+    search_turn(combat.clone(), big_fight, first, MAX_PLAYS, None)
+}
+
+/// The score of a play that wins the fight (the planner and the plan column).
+pub const WIN_SCORE: i64 = i64::MAX / 2;
+
+/// [`plan_turn`] with plans of at most `max_plays` plays; with `scores` (one per entry of `first`), it also records for each first
+/// play the best score of any plan the search tried that starts with it (`None` if it was not
+/// tried), and `first`'s [`Action::EndTurn`] gets the baseline. A potion the plan may not drink
+/// gets the score of drinking it and ending the turn, but the search does not go on from it,
+/// so the plan is the same with or without `scores`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one beam search loop; splitting it scatters its shared buffers"
+)]
+pub(crate) fn search_turn(
+    combat: Combat,
+    big_fight: bool,
+    first: &[Action],
+    max_plays: usize,
+    mut scores: Option<&mut [Option<i64>]>,
+) -> Vec<Action> {
     let before = Snapshot::of(combat.state());
     let potions_ok = before.hp * 100 < before.max_hp * POTION_HP_PERCENT
         || (big_fight && before.hp * 100 < before.max_hp * BIG_FIGHT_POTION_HP_PERCENT);
-    let mut best = (
-        before.score_to(&Snapshot::of(end_turn_of(combat.clone()).state())),
-        Vec::new(),
-    );
-    let mut beam: Vec<(Combat, Vec<Action>, i64)> = vec![(combat.clone(), Vec::new(), 0)];
-    for depth in 0..MAX_PLAYS {
-        let mut next: Vec<(i64, Combat, Vec<Action>, i64)> = Vec::new();
-        for (state, plan, bonus) in &beam {
+    // Every copy comes from `spare` (refilled with `clone_from`, so the search allocates no
+    // combat after its first few) and goes back to it when it is done with.
+    let mut spare: Vec<Combat> = Vec::new();
+    let mut scratch = combat.clone();
+    end_turn_in(&mut scratch);
+    let mut best = (before.score_to(&Snapshot::of(scratch.state())), Vec::new());
+    if let Some(scores) = scores.as_deref_mut() {
+        for (score, a) in scores.iter_mut().zip(first) {
+            if *a == Action::EndTurn {
+                *score = Some(best.0);
+            }
+        }
+    }
+    // Each plan carries the index in `first` of its first play.
+    let mut beam: Vec<(Combat, Vec<Action>, i64, usize)> =
+        vec![(combat, Vec::new(), 0, usize::MAX)];
+    for depth in 0..max_plays {
+        // At the last depth the plans are only scored, so their states are not kept.
+        let last = depth + 1 == max_plays;
+        let mut next: Vec<Scored> = Vec::new();
+        for (state, plan, bonus, root) in &beam {
             // The first play must be one the run models; later ones are checked when made.
             let legal = if depth == 0 {
-                first.to_vec()
+                Cow::Borrowed(first)
             } else {
-                state.legal_actions()
+                Cow::Owned(state.legal_actions())
             };
-            for a in legal {
+            for (i, a) in legal.iter().enumerate() {
+                let root = if depth == 0 { i } else { *root };
                 let potion = matches!(a, Action::UsePotion { .. });
-                if matches!(a, Action::EndTurn | Action::Resolve(_)) || (potion && !potions_ok) {
+                let held_potion = potion && !potions_ok;
+                if matches!(a, Action::EndTurn | Action::Resolve(_))
+                    || (held_potion && (depth > 0 || scores.is_none()))
+                {
                     continue;
                 }
                 let power = matches!(a, Action::PlayCard { card, .. }
-                    if state.state().card(card).card_type() == CardType::Power);
-                let mut copy = state.clone();
+                    if state.state().card(*card).card_type() == CardType::Power);
+                let mut copy = copy_of(&mut spare, state);
                 if copy.apply(a.clone()).is_err() {
+                    spare.push(copy);
                     continue;
                 }
-                let copy = resolve_choices(copy);
+                resolve_choices_in(&mut copy);
                 let mut plan = plan.clone();
-                plan.push(a);
+                plan.push(a.clone());
                 if copy.state().result.is_some() && Snapshot::of(copy.state()).hp > 0 {
+                    record(scores.as_deref_mut(), root, WIN_SCORE);
                     return plan;
+                }
+                if held_potion {
+                    // Scored for the column only: what drinking it now would do.
+                    end_turn_in(&mut copy);
+                    let score = before.score_to(&Snapshot::of(copy.state()));
+                    record(scores.as_deref_mut(), root, score);
+                    spare.push(copy);
+                    continue;
                 }
                 // Spending a card is free unless it makes things worse; a potion is worth
                 // something when it may be drunk.
@@ -264,52 +314,104 @@ fn plan_turn(combat: &Combat, big_fight: bool, first: &[Action]) -> Vec<Action> 
                         (_, true) => POWER_BONUS,
                         _ => 1,
                     };
+                let after = if last {
+                    end_turn_in(&mut copy);
+                    &copy
+                } else {
+                    scratch.clone_from(&copy);
+                    end_turn_in(&mut scratch);
+                    &scratch
+                };
                 let score = before
-                    .score_to(&Snapshot::of(end_turn_of(copy.clone()).state()))
+                    .score_to(&Snapshot::of(after.state()))
                     .saturating_add(bonus);
-                next.push((score, copy, plan, bonus));
+                record(scores.as_deref_mut(), root, score);
+                let kept = if last {
+                    spare.push(copy);
+                    None
+                } else {
+                    Some(copy)
+                };
+                next.push((score, kept, plan, bonus, root));
             }
         }
         if next.is_empty() {
             break;
         }
         next.sort_by_key(|(score, ..)| std::cmp::Reverse(*score));
-        next.truncate(BEAM);
+        let cut = BEAM.min(next.len());
+        spare.extend(next.drain(cut..).filter_map(|(_, state, ..)| state));
         if next[0].0 > best.0 {
             best = (next[0].0, next[0].2.clone());
         }
-        beam = next
+        if last {
+            break;
+        }
+        let kept = next
             .into_iter()
-            .map(|(_, state, plan, bonus)| (state, plan, bonus))
+            .filter_map(|(_, state, plan, bonus, root)| state.map(|s| (s, plan, bonus, root)))
             .collect();
+        spare.extend(mem::replace(&mut beam, kept).into_iter().map(|(s, ..)| s));
     }
     best.1
 }
 
+/// A scored plan: its score, its state after the plays (none at the last depth), the plays,
+/// their bonus and the index in `first` of the first play.
+type Scored = (i64, Option<Combat>, Vec<Action>, i64, usize);
+
+/// A copy of `state`, refilling a spare one if there is one.
+fn copy_of(spare: &mut Vec<Combat>, state: &Combat) -> Combat {
+    spare.pop().map_or_else(
+        || state.clone(),
+        |mut copy| {
+            copy.clone_from(state);
+            copy
+        },
+    )
+}
+
+/// Keeps the best `score` of the plans that start with `first[i]`.
+fn record(scores: Option<&mut [Option<i64>]>, i: usize, score: i64) {
+    if let Some(slot) = scores.and_then(|s| s.get_mut(i)) {
+        *slot = Some(slot.map_or(score, |s| s.max(score)));
+    }
+}
+
 /// Answers any pending card choice with the first options.
-fn resolve_choices(mut combat: Combat) -> Combat {
+pub(crate) fn resolve_choices(mut combat: Combat) -> Combat {
+    resolve_choices_in(&mut combat);
+    combat
+}
+
+/// [`resolve_choices`] in place.
+pub(crate) fn resolve_choices_in(combat: &mut Combat) {
     while combat.pending_decision().is_some() {
-        let Some(answer) = whole_choice(&combat, |_| 0) else {
+        let Some(answer) = whole_choice(combat, |_| 0) else {
             break;
         };
         if combat.apply(answer).is_err() {
             break;
         }
     }
-    combat
 }
 
 /// Finishes any pending card choice with the first options, then ends the turn, on `combat`.
-fn end_turn_of(combat: Combat) -> Combat {
-    let mut combat = resolve_choices(combat);
-    if combat.state().result.is_none() && combat.pending_decision().is_none() {
-        let _ = combat.apply(Action::EndTurn);
-    }
+pub(crate) fn end_turn_of(mut combat: Combat) -> Combat {
+    end_turn_in(&mut combat);
     combat
 }
 
+/// [`end_turn_of`] in place.
+pub(crate) fn end_turn_in(combat: &mut Combat) {
+    resolve_choices_in(combat);
+    if combat.state().result.is_none() && combat.pending_decision().is_none() {
+        let _ = combat.apply(Action::EndTurn);
+    }
+}
+
 /// What the lookahead compares.
-struct Snapshot {
+pub(crate) struct Snapshot {
     over: bool,
     hp: i32,
     max_hp: i32,
@@ -325,7 +427,7 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    fn of(s: &CombatState) -> Self {
+    pub(crate) fn of(s: &CombatState) -> Self {
         let player = s.creature(s.player.creature);
         let enemies: Vec<_> = s
             .enemies
@@ -357,7 +459,7 @@ impl Snapshot {
     }
 
     /// How much better `after` is than `self`.
-    fn score_to(&self, after: &Self) -> i64 {
+    pub(crate) fn score_to(&self, after: &Self) -> i64 {
         if after.over {
             return if after.hp > 0 {
                 i64::MAX / 2

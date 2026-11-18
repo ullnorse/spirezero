@@ -8,6 +8,7 @@ const el = (tag, cls, ...kids) => {
   for (const k of kids) if (k != null) e.append(k);
   return e;
 };
+const K = (ms) => (document.documentElement.dataset.speed === "fast" ? ms / 2 : ms); // Settings > Speed
 let S = null; // window.sts2, once attached
 const reduced = () => S?.pref("motion") === "reduced" || (S?.pref("motion") !== "full" && matchMedia("(prefers-reduced-motion: reduce)").matches);
 
@@ -87,16 +88,16 @@ function finish() {
     }
   } else if (down) {
     if (reduced()) return S.closeSheet();
-    p.style.transition = "transform .16s ease-in";
+    p.style.transition = `transform ${K(160)}ms ease-in`;
     p.style.transform = "translateY(100%)";
-    setTimeout(() => S.closeSheet(), 160);
+    setTimeout(() => S.closeSheet(), K(160));
     return;
   }
-  p.style.transition = reduced() ? "none" : "transform .22s cubic-bezier(.2,.8,.3,1)";
+  p.style.transition = reduced() ? "none" : `transform ${K(220)}ms cubic-bezier(.2,.8,.3,1)`;
   p.style.transform = "";
   const back = backdropOf(p);
   if (back) back.style.opacity = "";
-  setTimeout(settle, 240);
+  setTimeout(settle, K(240));
 }
 
 function initSwipe() {

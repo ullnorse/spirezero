@@ -814,7 +814,7 @@ fn run_json(run: &Run, ended: Option<&CombatState>) -> Value {
             cs.player
                 .relics
                 .iter()
-                .map(|r| fields::relic_json(Some(cs), r.kind, &r.data))
+                .map(|r| fields::relic_json(Some(cs), r.kind, cs.relic_data(r.id)))
                 .collect()
         },
     );

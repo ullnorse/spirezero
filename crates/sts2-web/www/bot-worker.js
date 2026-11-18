@@ -1,7 +1,8 @@
 // The bot, off the page's thread: the honest bot's wasm (sts2-web-bot, www/pkg-bot) answers the
 // page's "?" (advise), plays a seed one action a step (watch, step) and lists where a finished
-// run's choices differed from its own (differ). Loaded on the first use.
-import init, { Advisor, Review, Watch, differ, load_text, text_tables } from "./pkg-bot/sts2_web_bot.js";
+// run's choices differed from its own (differ), and the CB3 combat net's move in a fight (netAdvise,
+// WEB82; its weights, `net/cb3.bin`, are fetched on its first use). Loaded on the first use.
+import init, { Advisor, CombatNet, Review, Watch, differ, load_text, text_tables } from "./pkg-bot/sts2_web_bot.js";
 
 // The game's text, as the page loads it, so the bot's replay names things the same way.
 async function loadText() {
@@ -19,11 +20,32 @@ let advisor = null;
 let watch = null;
 let watchId = 0;
 let review = null;
+// The combat net (29 MB of weights, fetched once): a promise, so asks made while it loads wait for it.
+let net = null;
+const loadNet = () =>
+  (net ??= fetch("net/cb3.bin")
+    .then((r) => {
+      if (!r.ok) throw new Error(`net/cb3.bin: ${r.status}`);
+      return r.arrayBuffer();
+    })
+    .then((b) => new CombatNet(new Uint8Array(b)))
+    .catch((err) => {
+      net = null;
+      throw err;
+    }));
 let reviewId = 0;
 // How long a review's step holds the worker, so a hint or a watch is not kept waiting.
 const REVIEW_SLICE_MS = 120;
 
 const newReview = (s, at, found, seen) => new Review(s.character, s.seed, s.ascension, JSON.stringify(s.modifiers ?? []), JSON.stringify(s.actions), at, found, seen);
+
+async function answerNet(m) {
+  const n = await loadNet();
+  const t = performance.now();
+  const s = m.save;
+  const advice = JSON.parse(n.advise(s.character, s.seed, s.ascension, JSON.stringify(s.modifiers ?? []), JSON.stringify(s.actions), m.savePotions !== false));
+  return { advice, ms: Math.round(performance.now() - t) };
+}
 
 function answer(m) {
   const t = performance.now();
@@ -37,6 +59,7 @@ function answer(m) {
     watch?.free();
     watch = new Watch(s.character, s.seed, s.ascension, JSON.stringify(s.modifiers ?? []), JSON.stringify(s.actions ?? []));
     watchId = m.id;
+    if (s.script) watch.script(JSON.stringify(s.script));
     return { frame: JSON.parse(watch.first()) };
   }
   if (m.type === "step") {
@@ -78,7 +101,8 @@ self.onmessage = async (e) => {
   const m = e.data;
   try {
     await ready;
-    self.postMessage({ type: m.type, req: m.req, ...answer(m) });
+    const out = m.type === "netAdvise" ? await answerNet(m) : answer(m);
+    self.postMessage({ type: m.type, req: m.req, ...out });
   } catch (err) {
     self.postMessage({ type: m.type, req: m.req, error: String(err) });
   }

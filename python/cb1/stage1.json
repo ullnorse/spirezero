@@ -1,0 +1,17 @@
+{
+ "envs": 2048, "threads": 14, "steps": 64, "minibatch": 8192, "micro": 1024,
+ "epochs": 2, "e1_at": 30000000,
+ "ent_combat": [0.01, 0.002], "ent_flat": 50000000, "ent_end": 800000000, "ent_boost": true,
+ "kl_source": "batch", "fixed_probe": false,
+ "layers": 6, "d": 256, "ckpt_every": 10000000,
+ "returns": "chained", "adv_norm": "global",
+ "obs_v2": true, "obs_full": true, "card_stats": true, "emb_std": 0.4, "v_warm": 3,
+ "discard_potion": true, "obs_events": false, "run_head": false,
+ "compile": true, "fast_gather": true, "static_head": true, "compile_encode": true,
+ "pinned_copies": true, "compile_net": true, "behaviour": false, "kind_log": false,
+ "seed": 1,
+ "practice": {"enabled": true, "start": 0, "share": [1.0, 1.0], "adaptive": false,
+  "human": {"enabled": true, "path": "~/.cache/spirebot-data/cb1/train.jsonl", "share": 1.0,
+   "boss": 0.5, "hall": 0.2, "act_weights": [1.0, 1.5, 1.5], "hall_acts": [1.0, 1.0, 1.0],
+   "hall_hp_pct": 0, "variants": false, "win_bonus": 1.0, "hp_coef": 0.3, "loss_weight": 1.0}}
+}

@@ -348,6 +348,10 @@ pub struct Button {
     pub state: ButtonState,
     /// The `›` target: what the detail sheet describes.
     pub info: Option<InfoRef>,
+    /// What choosing the row adds to the run, as far as the game names it (an event option's
+    /// card, curse, relic, potion or enchantment).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grants: Vec<InfoRef>,
     /// "Tap again to confirm", the second-tap text.
     pub confirm: Option<Rich>,
     /// A card row's parts, for a client that lays a card out itself.
@@ -408,6 +412,7 @@ impl Button {
             right: None,
             state: ButtonState::Enabled,
             info: None,
+            grants: Vec::new(),
             confirm: None,
             card: None,
         }
@@ -435,6 +440,8 @@ pub enum InfoRef {
     Card(String),
     Relic(String),
     Potion(String),
+    /// An enchantment's id, or `ID:amount`.
+    Enchantment(String),
     Power(String),
     Enemy(u32),
     Room(String),

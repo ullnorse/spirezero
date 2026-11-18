@@ -1,11 +1,11 @@
 #!/bin/sh
 # Real-input test before a deploy: one memory-capped headless Chrome drives the real page (no ?proof=) with CDP
-# touch/mouse/wheel/key input at 390x664 (a phone) and 1440x900 (a desktop), the two in parallel in tabs of the same
+# touch/mouse/wheel/key input at 390x664 (a phone) and 1280x800 (a desktop), the two in parallel in tabs of the same
 # Chrome. Each compares the DOM with the engine's view after every action. Exits non-zero on any failure.
 # Output: $OUT/results.txt (one line per check) and screenshots, OUT = target/web32 by default.
 # Env: PORT (server, 8967), CDP_PORT (9467), HOST (LAN address), ID (systemd unit prefix, web32), BUDGET (s per viewport, 420).
 # VIEWS (phone desktop; small is 320x568).
-# WWW=<dir> serves that directory (a release) instead of www/.
+# WWW=<dir> serves that directory (a release) instead of www/; STATIC=<dir> serves an export_static.sh tree instead.
 # Needs crates/sts2-web/build.sh run first. The page is served from the LAN address: plain http, an insecure context.
 set -eu
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -24,7 +24,11 @@ cleanup() {
 }
 trap cleanup EXIT
 cleanup
-systemd-run --user --unit="$id-serve" --collect -p MemoryMax=1G -p OOMPolicy=continue env PORT="$port" ${WWW:+WWW="$WWW"} "$root/crates/sts2-web/serve.sh" >/dev/null
+if [ -n "${STATIC:-}" ]; then  # an export_static.sh tree, served the way Pages would (tools/static_shim.py)
+  systemd-run --user --unit="$id-serve" --collect -p MemoryMax=1G -p OOMPolicy=continue python3 -I "$root/crates/sts2-web/tools/static_shim.py" "$STATIC" "$port" 0.0.0.0 >/dev/null
+else
+  systemd-run --user --unit="$id-serve" --collect -p MemoryMax=1G -p OOMPolicy=continue env PORT="$port" ${WWW:+WWW="$WWW"} "$root/crates/sts2-web/serve.sh" >/dev/null
+fi
 systemd-run --user --unit="$id-chrome" --collect -p MemoryMax=4G -p OOMPolicy=continue google-chrome --headless=new --mute-audio --no-sandbox --disable-gpu \
   --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling \
   --remote-debugging-port="$cdp" --user-data-dir="$OUT/profile" about:blank >/dev/null

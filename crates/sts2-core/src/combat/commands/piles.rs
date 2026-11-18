@@ -61,6 +61,9 @@ impl Engine<'_> {
         } else {
             pile
         };
+        if target == PileType::Draw && position == Position::Top && self.s.chance_scripted() {
+            crate::rng::chance::unsupported("a card put on top of the draw pile");
+        }
         let old = self.s.move_card(card, target, |s| match position {
             Position::Bottom => None,
             Position::Top => Some(0),
@@ -365,7 +368,7 @@ impl Engine<'_> {
         } else {
             0
         };
-        for _ in 0..requested {
+        for i in 0..requested {
             if self.s.player.hand.len() >= MAX_HAND_SIZE || self.hooked().is_over_or_ending() {
                 break;
             }
@@ -379,6 +382,14 @@ impl Engine<'_> {
             }
             if !self.draw_is_possible() {
                 break;
+            }
+            if self.s.chance_scripted() {
+                // The draws this command takes in a row from this pile, if nothing reacts.
+                let run = usize::try_from(requested - i)
+                    .unwrap_or(0)
+                    .min(self.s.player.draw.len())
+                    .min(MAX_HAND_SIZE - self.s.player.hand.len());
+                pick_scripted_draw(self.s, u32::try_from(run).unwrap_or(u32::MAX));
             }
             let Some(&card) = self.s.player.draw.first() else {
                 break;
@@ -408,6 +419,9 @@ impl Engine<'_> {
             };
             self.record(self.s.player.creature, kind);
             self.after_card_drawn(card, from_hand_draw)?;
+        }
+        if self.s.chance_scripted() {
+            crate::rng::chance::end_draws();
         }
         Ok(drawn)
     }
@@ -479,10 +493,13 @@ impl Engine<'_> {
         let mut list = self.s.player.discard.to_vec();
         list.extend(self.s.player.draw.iter().copied());
         let state = &mut *self.s;
-        let all_cards = &state.cards;
-        stable_shuffle_by_key(&mut list, &mut state.rng[RunRngType::Shuffle], |c| {
-            cards::sort_key(&all_cards[c.index()])
-        });
+        // A scripted draw pile is unordered: its draws are the chance events.
+        if !state.chance_scripted() {
+            let all_cards = &state.cards;
+            stable_shuffle_by_key(&mut list, &mut state.rng[RunRngType::Shuffle], |c| {
+                cards::sort_key(&all_cards[c.index()])
+            });
+        }
         self.hooked().modify_shuffle_order(&mut list, false);
         self.add_cards_to_pile(&list, PileType::Draw, Position::Bottom)?;
         self.emit(Event::Shuffled);
@@ -526,7 +543,35 @@ impl Engine<'_> {
 #[inline(never)]
 fn random_pile_index(s: &mut CombatState, pile: PileType) -> usize {
     let count = s.player.pile(pile).len();
+    if pile == PileType::Draw && s.chance_scripted() {
+        // A scripted draw pile is unordered: any place is every place.
+        return count;
+    }
     let bound = i32::try_from(count + 1).expect("pile size fits i32");
     let index = s.rng[RunRngType::Shuffle].next_int(bound);
     usize::try_from(index).expect("NextInt is non-negative")
+}
+
+/// The solver's draw ([`crate::rng::chance`]): the script picks which draw-pile card is drawn,
+/// and it moves to the top. `run` is how many draws the command takes in a row from this pile.
+#[cold]
+#[inline(never)]
+fn pick_scripted_draw(s: &mut CombatState, run: u32) {
+    use crate::combat::hooks::Hook;
+    let len = s.player.draw.len();
+    if len == 0 {
+        return;
+    }
+    let reactive = [
+        Hook::after_card_drawn,
+        Hook::after_card_drawn_early,
+        Hook::after_card_changed_piles,
+        Hook::after_card_changed_piles_late,
+    ]
+    .into_iter()
+    .any(|h| !s.lacks(h));
+    let index = crate::rng::chance::draw(len, run, reactive, || {
+        s.player.draw.iter().map(|&c| s.card_key(c)).collect()
+    });
+    s.player.draw[..=index].rotate_right(1);
 }

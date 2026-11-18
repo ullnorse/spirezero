@@ -21,7 +21,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::PollinousCore(data) = &mut s.relic_mut(me).data else {
+    let RelicData::PollinousCore(data) = s.relic_data_mut(me) else {
         unreachable!("a PollinousCore has PollinousCore data");
     };
     data
@@ -47,7 +47,7 @@ impl Hooks for PollinousCore {
     }
 
     fn modify_hand_draw(&self, s: &CombatState, me: RelicId, count: Decimal) -> Decimal {
-        let RelicData::PollinousCore(data) = s.relic(me).data else {
+        let RelicData::PollinousCore(data) = *s.relic_data(me) else {
             unreachable!("a PollinousCore has PollinousCore data");
         };
         if data.turns_seen < TURNS {

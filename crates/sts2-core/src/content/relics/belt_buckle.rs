@@ -20,7 +20,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::BeltBuckle(data) = &mut s.relic_mut(me).data else {
+    let RelicData::BeltBuckle(data) = s.relic_data_mut(me) else {
         unreachable!("a BeltBuckle has BeltBuckle data");
     };
     data

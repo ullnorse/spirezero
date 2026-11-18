@@ -58,7 +58,7 @@ button:disabled { cursor: default; }
 .stat.gold { color: var(--gold); } .stat.gold b { color: var(--fg); }
 .stat.floor { color: var(--dim); } .stat.floor b { color: var(--fg); }
 .stat.stars { color: var(--energy); }
-.stat.hurt { animation: hurt .5s ease; }
+.stat.hurt { animation: hurt calc(.5s * var(--spd, 1)) ease; }
 @keyframes hurt { 30% { transform: scale(1.18); color: var(--lethal); } }
 .grow { flex: 1; }
 .iconbtn { width: 44px; height: 44px; display: inline-grid; place-items: center; border: 0; border-radius: var(--r-s); background: transparent; color: var(--dim); }
@@ -90,7 +90,7 @@ button:disabled { cursor: default; }
 .relic.wax i { color: var(--dim); }
 .relic:active { background: var(--surf2); color: var(--fg); }
 .hpline { height: 3px; margin: 0 -12px; background: var(--surf2); }
-.hpline i { display: block; height: 100%; background: linear-gradient(90deg, var(--hp), color-mix(in srgb, var(--hp) 70%, var(--gold))); transition: width .4s ease; }
+.hpline i { display: block; height: 100%; background: linear-gradient(90deg, var(--hp), color-mix(in srgb, var(--hp) 70%, var(--gold))); transition: width calc(.4s * var(--spd, 1)) ease; }
 
 /* ---- screen ---- */
 #screen { padding-top: 10px; }
@@ -112,10 +112,10 @@ body.fight .field { flex: 1; align-content: start; padding: 4px 0; }
 .field.elite .ename::before { content: "ELITE"; } .field.boss .ename::before { content: "BOSS"; }
 .field.n1 .ename, .field.n2 .ename { font-size: 18px; }
 /* Screen changes: a room slides in, a fight zooms in, the map rises; all off with reduced motion. */
-#screen.enter { animation: enter .24s cubic-bezier(.2,.8,.3,1); }
+#screen.enter { animation: enter calc(.24s * var(--spd, 1)) cubic-bezier(.2,.8,.3,1); }
 #screen.roomin { animation-name: roomin; }
-#screen.fightin { animation: fightin .34s cubic-bezier(.2,.8,.3,1); }
-#screen.mapin { animation-name: mapin; animation-duration: .3s; }
+#screen.fightin { animation: fightin calc(.34s * var(--spd, 1)) cubic-bezier(.2,.8,.3,1); }
+#screen.mapin { animation-name: mapin; animation-duration: calc(.3s * var(--spd, 1)); }
 @keyframes enter { from { opacity: 0; transform: translateY(8px); } }
 @keyframes roomin { from { opacity: 0; transform: translateX(18px); } }
 @keyframes fightin { from { opacity: 0; transform: scale(.94); filter: blur(2px); } }
@@ -170,7 +170,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 .row {
   display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 12px 16px;
   border-radius: var(--r); border: 1px solid var(--line); background: var(--surf); text-align: left; box-shadow: var(--shadow);
-  transition: transform .08s ease, background .15s;
+  transition: transform calc(.08s * var(--spd, 1)) ease, background calc(.15s * var(--spd, 1));
 }
 .row:active { transform: scale(.985); background: var(--surf2); }
 .row .main { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -226,6 +226,9 @@ body.room #screen > :not(.peekreward) + .peekreward { margin-top: auto; }
 .peekreward .peekalt { margin-top: calc(6 * var(--u, 1px)); }
 .peekreward .prompt { margin: 0 2px calc(8 * var(--u, 1px)); }
 /* An ancient's choices: one large row each, the relic big beside its text. */
+/* Neow's heading and his words are centred on the page, as the desktop has them (the picture of other events carries its own title). */
+body[data-decision="ancient"] #screen > .head { justify-content: center; text-align: center; }
+body[data-decision="ancient"] #screen > .story { text-align: center; }
 body[data-decision="ancient"] #screen .list .row, body[data-decision="treasure"] #screen .list .row { min-height: calc(104 * var(--u, 1px)); gap: calc(14 * var(--u, 1px)); }
 body[data-decision="ancient"] #screen .list .row .lead-ic, body[data-decision="treasure"] #screen .list .row .lead-ic { width: calc(80 * var(--u, 1px)); height: calc(80 * var(--u, 1px)); }
 body[data-decision="ancient"] #screen .list .row .lab, body[data-decision="treasure"] #screen .list .row .lab { font-size: var(--fs-xl); }
@@ -260,7 +263,7 @@ body[data-decision="ancient"] #screen .list .row .lab, body[data-decision="treas
   padding: 6px 6px 16px; border-radius: 12px; text-align: center; overflow: hidden; color: var(--fg);
   border: 1.5px solid var(--rar);
   background: linear-gradient(180deg, color-mix(in srgb, var(--k) 30%, var(--surf)) 0, color-mix(in srgb, var(--k) 8%, var(--surf)) 34px, var(--surf) 70%);
-  box-shadow: var(--shadow); transition: transform .12s ease, box-shadow .12s, opacity .12s;
+  box-shadow: var(--shadow); transition: transform calc(.12s * var(--spd, 1)) ease, box-shadow calc(.12s * var(--spd, 1)), opacity calc(.12s * var(--spd, 1));
   -webkit-touch-callout: none;
 }
 .card.k-attack { --k: var(--k-attack); } .card.k-skill { --k: var(--k-skill); } .card.k-power { --k: var(--k-power); }
@@ -338,7 +341,7 @@ body[data-decision="ancient"] #screen .list .row .lab, body[data-decision="treas
 .enemy {
   position: relative; display: flex; flex-direction: column; gap: 5px; padding: 8px; text-align: left; color: var(--fg); min-width: 0;
   border-radius: var(--r); border: 1px solid var(--line); background: var(--surf); box-shadow: var(--shadow);
-  transition: transform .12s, box-shadow .15s, opacity .15s;
+  transition: transform calc(.12s * var(--spd, 1)), box-shadow calc(.15s * var(--spd, 1)), opacity calc(.15s * var(--spd, 1));
 }
 .enemy.aim { border-color: var(--sel); box-shadow: 0 0 0 2px color-mix(in srgb, var(--sel) 60%, transparent), var(--shadow); }
 /* Pulses run on opacity of a pseudo-element's fixed glow (composited), not on box-shadow (a repaint
@@ -382,9 +385,9 @@ body[data-decision="ancient"] #screen .list .row .lab, body[data-decision="treas
 .ename { font: 700 16px/1.15 var(--serif); }
 .field.n3 .ename, .field.n4 .ename { font-size: 14px; }
 .hpbar { position: relative; height: 20px; border-radius: 10px; background: var(--track); border: 1px solid var(--line); overflow: visible; }
-.hpbar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 9px; background: linear-gradient(180deg, color-mix(in srgb, var(--hp) 85%, #fff), var(--hp)); transition: width .45s cubic-bezier(.3,.7,.3,1); }
+.hpbar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 9px; background: linear-gradient(180deg, color-mix(in srgb, var(--hp) 85%, #fff), var(--hp)); transition: width calc(.45s * var(--spd, 1)) cubic-bezier(.3,.7,.3,1); }
 .hpbar .fill.hidden { display: none; }
-.hpbar .poisonfg, .hpbar .doomfg { position: absolute; top: 0; bottom: 0; transition: width .45s cubic-bezier(.3,.7,.3,1), left .45s cubic-bezier(.3,.7,.3,1); }
+.hpbar .poisonfg, .hpbar .doomfg { position: absolute; top: 0; bottom: 0; transition: width calc(.45s * var(--spd, 1)) cubic-bezier(.3,.7,.3,1), left calc(.45s * var(--spd, 1)) cubic-bezier(.3,.7,.3,1); }
 .hpbar .poisonfg { background: linear-gradient(180deg, #a6ff80, #4fc92a); border-radius: 0 9px 9px 0; min-width: 6px; }
 .hpbar .doomfg { background: linear-gradient(180deg, #c78bff, #6a2fc4); border-radius: 9px; }
 .hpbar.poison-lethal .poisonfg { border-radius: 9px 0 0 9px; }
@@ -407,28 +410,28 @@ body[data-decision="ancient"] #screen .list .row .lab, body[data-decision="treas
 .pw.debuff { background: color-mix(in srgb, var(--debuff) 16%, var(--surf2)); color: var(--debuff); }
 .pv { position: absolute; right: 8px; top: 8px; font-weight: 800; font-size: 14px; color: var(--sel); }
 .pv.dies { color: var(--lethal); text-transform: uppercase; letter-spacing: 1px; }
-.enemy.hit { animation: shake .35s ease; }
+.enemy.hit { animation: shake calc(.35s * var(--spd, 1)) ease; }
 @keyframes shake { 20% { transform: translateX(-4px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-2px); } }
-.enemy.hit::after, .you .me.hit::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: color-mix(in srgb, var(--attack) 35%, #fff); opacity: 0; animation: flash .3s ease-out; }
+.enemy.hit::after, .you .me.hit::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: color-mix(in srgb, var(--attack) 35%, #fff); opacity: 0; animation: flash calc(.3s * var(--spd, 1)) ease-out; }
 @keyframes flash { from { opacity: .6; } }
-.glow { animation: glow .7s ease-out; }
-.glow .hpbar .block { animation: pop .4s cubic-bezier(.2,1.6,.4,1); }
+.glow { animation: glow calc(.7s * var(--spd, 1)) ease-out; }
+.glow .hpbar .block { animation: pop calc(.4s * var(--spd, 1)) cubic-bezier(.2,1.6,.4,1); }
 @keyframes glow { from { box-shadow: 0 0 0 3px color-mix(in srgb, var(--defend) 80%, transparent), 0 0 22px color-mix(in srgb, var(--defend) 60%, transparent); } }
 @keyframes pop { from { transform: translateY(-50%) scale(1.6); } }
 .energy.live { animation: none; }
 @keyframes orb { 50% { transform: scale(1.04); } }
 .energy { position: relative; }
 .energy.live::after { content: none; }
-.energy.spent { animation: spent .3s ease; }
+.energy.spent { animation: spent calc(.3s * var(--spd, 1)) ease; }
 @keyframes spent { 40% { transform: scale(.88); } }
 /* A played card's ghost flies to its target (or up into the field) and fades. */
-.flycard { position: fixed; z-index: 15; margin: 0; pointer-events: none; transform-origin: center; transition: transform .3s cubic-bezier(.4,0,.6,1), opacity .3s ease-in; }
-.hand.deal .card { animation: deal .32s cubic-bezier(.2,.8,.3,1) backwards; animation-delay: calc(var(--i, 0) * 40ms); }
+.flycard { position: fixed; z-index: 15; margin: 0; pointer-events: none; transform-origin: center; transition: transform calc(.3s * var(--spd, 1)) cubic-bezier(.4,0,.6,1), opacity calc(.3s * var(--spd, 1)) ease-in; }
+.hand.deal .card { animation: deal calc(.32s * var(--spd, 1)) cubic-bezier(.2,.8,.3,1) backwards; animation-delay: calc(var(--i, 0) * calc(40ms * var(--spd, 1))); }
 @keyframes deal { from { opacity: 0; transform: translateY(26px) scale(.9); } }
-.float { position: absolute; right: 12px; top: 30%; font-weight: 900; font-size: 22px; color: var(--attack); pointer-events: none; text-shadow: 0 2px 4px rgba(0,0,0,.5); animation: rise .9s ease-out forwards; }
+.float { position: absolute; right: 12px; top: 30%; font-weight: 900; font-size: 22px; color: var(--attack); pointer-events: none; text-shadow: 0 2px 4px rgba(0,0,0,.5); animation: rise calc(.9s * var(--spd, 1)) ease-out forwards; }
 @keyframes rise { to { transform: translateY(-34px); opacity: 0; } }
 .float.gain { color: var(--defend); left: 12px; right: auto; top: 46%; }
-.you .me.hit { animation: shake .35s ease; }
+.you .me.hit { animation: shake calc(.35s * var(--spd, 1)) ease; }
 
 /* A banner (elite, boss, victory): never blocks a tap. */
 #banner {
@@ -436,7 +439,7 @@ body[data-decision="ancient"] #screen .list .row .lab, body[data-decision="treas
   pointer-events: none; opacity: 0; transform: scaleY(.4);
   background: var(--bg); border-block: 1px solid color-mix(in srgb, var(--gold) 40%, var(--line)); box-shadow: 0 0 40px 20px color-mix(in srgb, var(--bg) 70%, transparent);
 }
-#banner.show { animation: bannerin var(--ms, 1.3s) ease forwards; }
+#banner.show { animation: bannerin var(--ms, calc(1.3s * var(--spd, 1))) ease forwards; }
 #banner.elite b, #banner.boss b { font-size: 44px; letter-spacing: 6px; text-transform: uppercase; color: var(--attack); }
 #banner.elite small, #banner.boss small { color: var(--fg); font: 600 17px var(--serif); }
 #banner.win b { color: var(--gold); font-size: 40px; letter-spacing: 3px; }
@@ -469,6 +472,7 @@ body[data-decision="ancient"] #screen .list .row .lab, body[data-decision="treas
 .you .pet.aim { border-color: var(--sel); box-shadow: 0 0 0 2px color-mix(in srgb, var(--sel) 60%, transparent); }
 .you .pet.dead { opacity: .4; }
 .yname { font: 700 14px/1 var(--serif); color: var(--dim); }
+.incline { display: none; }
 .res { font-size: var(--fs-s); color: var(--dim); display: flex; flex-direction: column; }
 .orbs { display: flex; gap: 6px; flex-wrap: wrap; }
 .orb {
@@ -494,7 +498,7 @@ body[data-decision="ancient"] #screen .list .row .lab, body[data-decision="treas
 .primary {
   display: grid; place-items: center; min-height: 56px; padding: 0 20px; border-radius: 16px; border: 0; font-weight: 800; font-size: 18px; letter-spacing: .3px;
   color: #1b1405; background: linear-gradient(180deg, #f6cf6b, #d9a13a); box-shadow: 0 4px 14px rgba(217,161,58,.35), inset 0 1px 0 rgba(255,255,255,.5);
-  transition: transform .08s, filter .15s;
+  transition: transform calc(.08s * var(--spd, 1)), filter calc(.15s * var(--spd, 1));
 }
 .primary:active { transform: scale(.98); filter: brightness(.95); }
 .primary.wide { width: 100%; }
@@ -561,7 +565,7 @@ body[data-decision="map"] .mapscroll { flex: 1; height: auto; min-height: 220px;
 .youtag rect { fill: var(--gold); stroke: none; }
 .youtag text { fill: #1b1405; font: 800 11px system-ui, sans-serif; letter-spacing: 1px; }
 .node.reach { cursor: pointer; }
-.node.reach circle:not(.hit) { fill: color-mix(in srgb, var(--sel) 18%, var(--surf)); stroke: var(--sel); stroke-width: 3; animation: node 1.3s ease-in-out 4; }
+.node.reach circle:not(.hit) { fill: color-mix(in srgb, var(--sel) 18%, var(--surf)); stroke: var(--sel); stroke-width: 3; animation: node calc(1.3s * var(--spd, 1)) ease-in-out 4; }
 .node.reach svg { stroke: var(--fg); }
 .node.boss rect { fill: color-mix(in srgb, var(--attack) 16%, var(--surf)); stroke: var(--attack); stroke-width: 2.5; }
 .node.boss svg { stroke: var(--attack); }
@@ -572,15 +576,15 @@ body[data-decision="map"] #screen > .head h1 { font-size: 22px; margin: 4px 0; }
 
 /* ---- sheets ---- */
 #sheet { position: fixed; inset: 0; z-index: 20; }
-#sheet .backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.5); animation: fade .2s ease; }
+#sheet .backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.5); animation: fade calc(.2s * var(--spd, 1)) ease; }
 #sheet .panel {
   position: absolute; left: 0; right: 0; bottom: 0; max-width: 560px; margin: 0 auto; max-height: 86dvh; display: flex; flex-direction: column;
   background: var(--bg2); border-radius: 22px 22px 0 0; border: 1px solid var(--line); border-bottom: 0;
-  box-shadow: 0 -10px 30px rgba(0,0,0,.4); animation: up .25s cubic-bezier(.2,.8,.3,1);
+  box-shadow: 0 -10px 30px rgba(0,0,0,.4); animation: up calc(.25s * var(--spd, 1)) cubic-bezier(.2,.8,.3,1);
 }
 #sheet.closing { pointer-events: none; }
-#sheet.closing .backdrop { animation: fade .18s ease reverse forwards; }
-#sheet.closing .panel { animation: down .18s ease-in forwards; }
+#sheet.closing .backdrop { animation: fade calc(.18s * var(--spd, 1)) ease reverse forwards; }
+#sheet.closing .panel { animation: down calc(.18s * var(--spd, 1)) ease-in forwards; }
 @keyframes down { to { transform: translateY(100%); } }
 #sheet.pinned { inset: auto 0 var(--dock) 0; z-index: 4; }
 #sheet.pinned .backdrop { display: none; }
@@ -620,6 +624,8 @@ body[data-decision="map"] #screen > .head h1 { font-size: 22px; margin: 4px 0; }
 .tip p { margin: 4px 0 0; color: var(--dim); }
 .terms { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 4px; }
 .term { padding: 10px 12px; border-radius: var(--r-s); background: var(--surf); border: 1px solid var(--line); }
+.term.cardref { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.term.cardref small { color: var(--dim); font-size: var(--fs-s); }
 .term b { color: var(--gold); font-size: var(--fs-m); }
 .term p { margin: 4px 0 0; color: var(--dim); font-size: var(--fs-m); line-height: 1.4; }
 .term p .r-Body, .term p .r-Plain { color: var(--dim); }
@@ -641,7 +647,7 @@ body[data-decision="map"] #screen > .head h1 { font-size: 22px; margin: 4px 0; }
 #toast {
   position: fixed; left: 50%; bottom: calc(var(--dock) + 14px); z-index: 30; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
   max-width: min(520px, 92vw); padding: 10px 16px; border-radius: 14px; background: #2b1a1a; color: #ffd2c8; border: 1px solid #6b2d26;
-  box-shadow: var(--shadow); transition: opacity .2s, transform .2s; font-weight: 600; text-align: center;
+  box-shadow: var(--shadow); transition: opacity calc(.2s * var(--spd, 1)), transform calc(.2s * var(--spd, 1)); font-weight: 600; text-align: center;
 }
 :root[data-theme="light"] #toast { background: #fff0ec; color: #8a2216; border-color: #f0b7a8; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -650,10 +656,10 @@ body[data-decision="map"] #screen > .head h1 { font-size: 22px; margin: 4px 0; }
 #start { position: fixed; inset: 0; z-index: 10; overflow-y: auto; background: var(--bg); }
 :root[data-theme="light"] #start { background: radial-gradient(120% 70% at 50% 0, #e9dcc0, var(--bg) 65%); }
 #start[hidden] { display: none; }
-#start.leaving { animation: startout .26s ease-in forwards; pointer-events: none; }
+#start.leaving { animation: startout calc(.26s * var(--spd, 1)) ease-in forwards; pointer-events: none; }
 @keyframes startout { to { opacity: 0; transform: scale(1.04); } }
 .startin { max-width: 520px; min-height: 100%; margin: 0 auto; padding: calc(18px + env(safe-area-inset-top)) 18px 0; display: flex; flex-direction: column; gap: 12px; }
-.brand { position: relative; display: flex; flex-direction: column; align-items: center; margin: auto 0 8px; padding-top: 0; font-family: var(--serif); animation: rise-in .6s cubic-bezier(.2,.8,.3,1); }
+.brand { position: relative; display: flex; flex-direction: column; align-items: center; margin: auto 0 8px; padding-top: 0; font-family: var(--serif); animation: rise-in calc(.6s * var(--spd, 1)) cubic-bezier(.2,.8,.3,1); }
 @keyframes rise-in { from { opacity: 0; transform: translateY(14px); } }
 .brand .spire { position: absolute; top: 0; left: 50%; width: 64px; height: 64px; margin-left: -32px; color: var(--gold); filter: drop-shadow(0 0 14px color-mix(in srgb, var(--gold) 55%, transparent)); }
 .brand .spire .ic { width: 64px; height: 64px; }
@@ -674,8 +680,8 @@ body[data-decision="map"] #screen > .head h1 { font-size: 22px; margin: 4px 0; }
 .continue .ic { width: 26px; height: 26px; color: var(--gold); }
 #start h3 { margin-bottom: 0; }
 .heroes { display: flex; justify-content: space-between; gap: 6px; padding: 4px 2px; }
-.heroes .chip { flex: none; display: grid; place-items: center; width: 56px; height: 56px; padding: 0; border: 0; border-radius: 50%; background: none; transition: transform .15s; }
-.heroes .chip .mono { width: 50px; height: 50px; font-size: 22px; opacity: .55; filter: saturate(.6); transition: opacity .15s, filter .15s, box-shadow .15s; }
+.heroes .chip { flex: none; display: grid; place-items: center; width: 56px; height: 56px; padding: 0; border: 0; border-radius: 50%; background: none; transition: transform calc(.15s * var(--spd, 1)); }
+.heroes .chip .mono { width: 50px; height: 50px; font-size: 22px; opacity: .55; filter: saturate(.6); transition: opacity calc(.15s * var(--spd, 1)), filter calc(.15s * var(--spd, 1)), box-shadow calc(.15s * var(--spd, 1)); }
 .heroes .chip.on { transform: scale(1.1); }
 .heroes .chip.on .mono { opacity: 1; filter: none; box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--gold); }
 .hero { display: flex; align-items: center; gap: 14px; min-height: 76px; padding: 12px 16px; border-radius: var(--r-l); border: 1px solid var(--line); background: var(--surf); box-shadow: var(--shadow); }
@@ -692,11 +698,8 @@ body[data-decision="map"] #screen > .head h1 { font-size: 22px; margin: 4px 0; }
 .ascinfo { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; box-sizing: border-box; height: calc(2.7em + 14px); overflow: hidden; padding: 6px 12px; border-radius: var(--r); border: 1px solid var(--line); background: var(--surf); text-align: left; font-size: var(--fs-xs); line-height: 1.35; color: var(--dim); }
 .ascinfo .asctext { flex: 1; min-width: 0; }
 .ascinfo[hidden] { display: none; }
-.ascinfo:disabled { opacity: 1; }
 .ascinfo .asctitle { color: var(--gold); }
-.ascinfo .asclist { flex: none; font-style: normal; color: var(--gold); }
 .rt-gold { color: var(--gold); } .rt-blue { color: var(--defend); } .rt-red { color: var(--attack); } .rt-green { color: var(--buff); }
-.asclvl b { color: var(--gold); }
 .foot { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: auto; }
 /* The start screen's two columns are one column on a phone: each child keeps its place by order. */
 .scol { display: contents; }
@@ -741,15 +744,15 @@ body[data-decision="map"] #screen > .head h1 { font-size: 22px; margin: 4px 0; }
 .moment {
   position: fixed; inset: 0; z-index: 40; display: grid; place-content: center; justify-items: center; gap: 8px; padding: 24px; text-align: center;
   background: radial-gradient(80% 60% at 50% 45%, color-mix(in srgb, var(--k) 30%, var(--bg)), var(--bg) 75%);
-  animation: fade .4s ease;
+  animation: fade calc(.4s * var(--spd, 1)) ease;
 }
 .moment.lost { --k: var(--attack); } .moment.won { --k: var(--gold); }
-.moment.out { animation: fade .3s ease reverse forwards; }
-.moment .mark { display: grid; place-items: center; width: 92px; height: 92px; border-radius: 50%; color: var(--k); border: 2px solid var(--k); box-shadow: 0 0 30px color-mix(in srgb, var(--k) 50%, transparent); animation: stamp .5s cubic-bezier(.2,1.4,.4,1) .1s backwards; }
+.moment.out { animation: fade calc(.3s * var(--spd, 1)) ease reverse forwards; }
+.moment .mark { display: grid; place-items: center; width: 92px; height: 92px; border-radius: 50%; color: var(--k); border: 2px solid var(--k); box-shadow: 0 0 30px color-mix(in srgb, var(--k) 50%, transparent); animation: stamp calc(.5s * var(--spd, 1)) cubic-bezier(.2,1.4,.4,1) calc(.1s * var(--spd, 1)) backwards; }
 .moment .mark .ic { width: 50px; height: 50px; }
-.moment b { font: 700 54px/1.05 var(--serif); letter-spacing: 6px; text-transform: uppercase; color: var(--k); animation: stamp .5s cubic-bezier(.2,1.4,.4,1) .25s backwards; }
-.moment p { margin: 4px 0 0; max-width: 320px; font: 18px/1.4 var(--serif); color: var(--fg); animation: fade .5s ease .6s backwards; }
-.moment small { color: var(--dim); font-size: 14px; animation: fade .5s ease 1s backwards; }
+.moment b { font: 700 54px/1.05 var(--serif); letter-spacing: 6px; text-transform: uppercase; color: var(--k); animation: stamp calc(.5s * var(--spd, 1)) cubic-bezier(.2,1.4,.4,1) calc(.25s * var(--spd, 1)) backwards; }
+.moment p { margin: 4px 0 0; max-width: 320px; font: 18px/1.4 var(--serif); color: var(--fg); animation: fade calc(.5s * var(--spd, 1)) ease calc(.6s * var(--spd, 1)) backwards; }
+.moment small { color: var(--dim); font-size: 14px; animation: fade calc(.5s * var(--spd, 1)) ease calc(1s * var(--spd, 1)) backwards; }
 @keyframes stamp { from { opacity: 0; transform: scale(1.6); } }
 
 /* ---- roles ---- */
@@ -799,9 +802,9 @@ body.lite .roomart .ic { filter: none; }
 /* Drag to play: the lifted card follows the thumb; what it would land on lights up. */
 .hand .card { touch-action: none; }
 .hand .card.lifted { opacity: .25; transform: scale(.96); }
-.dragcard { position: fixed; z-index: 16; margin: 0; pointer-events: none; will-change: transform; box-shadow: 0 14px 30px rgba(0,0,0,.5), 0 0 0 2px var(--sel); transition: opacity .12s; }
+.dragcard { position: fixed; z-index: 16; margin: 0; pointer-events: none; will-change: transform; box-shadow: 0 14px 30px rgba(0,0,0,.5), 0 0 0 2px var(--sel); transition: opacity calc(.12s * var(--spd, 1)); }
 .dragcard.cancel { opacity: .55; box-shadow: var(--shadow); }
-.dragcard.back { transition: transform .18s ease-out, opacity .18s; opacity: 0; }
+.dragcard.back { transition: transform calc(.18s * var(--spd, 1)) ease-out, opacity calc(.18s * var(--spd, 1)); opacity: 0; }
 body.dragging .enemy.aim::after { animation: none; }
 #screen .enemy.drop, #screen .pet.drop { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold), 0 0 22px color-mix(in srgb, var(--gold) 45%, transparent); transform: scale(1.03); }
 body.dropfield #screen .board { outline: 2px dashed color-mix(in srgb, var(--sel) 70%, transparent); outline-offset: 2px; border-radius: var(--r); background: color-mix(in srgb, var(--sel) 6%, transparent); }
@@ -1008,7 +1011,7 @@ g.node.kbd circle:not(.hit):not(.ring) { stroke: var(--gold); stroke-width: 4; }
 .mapsvg.inked line.next { stroke: #1f6f78; stroke-width: 4.5; stroke-dasharray: 0.1 9; opacity: 1; }
 .node.art { opacity: 1; }
 .node.art:not(.ahead):not(.reach):not(.visited):not(.you) { opacity: .6; }
-.node.art .glow { opacity: 0; filter: url(#tint-go); transition: opacity .15s; }
+.node.art .glow { opacity: 0; filter: url(#tint-go); transition: opacity calc(.15s * var(--spd, 1)); }
 .node.art.reach .glow { opacity: .75; }
 .node.art.reach .mi { animation: nodebob 1.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 @keyframes nodebob { 50% { transform: scale(1.12); } }
@@ -1132,6 +1135,7 @@ body.gameart .primary:not(.plate):active { filter: brightness(1.15); transform: 
   .tray .shelf.tiny { --rs: calc(26 * var(--u)); }
   .tray .shelf::-webkit-scrollbar { display: none; }
   .tray .relic.fold { height: calc(30 * var(--u)); }
+  .tray .iconbtn.netbot, .tray .iconbtn.netone { flex: none; width: calc(34 * var(--u)); height: calc(32 * var(--u)); margin: 0; }
   #screen { padding-top: calc(6 * var(--u)); }
 
   /* What the enemies' turn takes is under End Turn (its hint), once. */
@@ -1164,8 +1168,10 @@ body.gameart .primary:not(.plate):active { filter: brightness(1.15); transform: 
   body.fight .enemy .hprow .block { width: calc(28 * var(--u)); height: calc(28 * var(--u)); }
   body.fight .enemy .hprow .block .ic { width: calc(28 * var(--u)); height: calc(28 * var(--u)); }
   body.fight .enemy .powers { gap: calc(3 * var(--u)); }
-  body.fight .powers.none { min-height: calc(17 * var(--u)); }
-  body.fight .pw.pic { padding: 1px calc(5 * var(--u)) 1px calc(2 * var(--u)); }
+  /* One row height whether or not a power sits in it: the chip is exactly the placeholder's height, so a power gained shifts nothing. */
+  body.fight .powers { min-height: calc(17 * var(--u)); align-content: flex-start; }
+  body.fight .pw { box-sizing: border-box; display: inline-flex; align-items: center; height: calc(17 * var(--u)); padding-block: 0; line-height: 1; }
+  body.fight .pw.pic { padding-inline: calc(2 * var(--u)) calc(5 * var(--u)); }
   body.fight .pw.pic .pw-ic { width: calc(15 * var(--u)); height: calc(15 * var(--u)); }
   body.fight .pw.pic b { font-size: max(10px, 11 * var(--u)); }
   /* Each enemy a column (intent, picture, name, bar, powers); the picture takes the height of the
@@ -1199,6 +1205,10 @@ body.gameart .primary:not(.plate):active { filter: brightness(1.15); transform: 
   body.fight .you .me, body.fight .you .pet { flex-direction: row; flex-wrap: wrap; align-items: center; gap: calc(3 * var(--u)) calc(6 * var(--u)); padding: calc(4 * var(--u)) calc(8 * var(--u)); }
   body.fight .you .me > .hprow, body.fight .you .pet > .hprow { flex: 1 1 calc(120 * var(--u)); min-width: 0; }
   body.fight .you .yname { font-size: max(10px, 12 * var(--u)); max-width: calc(76 * var(--u)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The totals in one line of their own (the band under the enemies is hidden here): one row high always, cut with … rather than wrapped. */
+  body.fight .you .incline { display: block; flex: 1 1 100%; min-width: 0; height: calc(14 * var(--u)); line-height: calc(14 * var(--u)); font-size: max(10px, 12 * var(--u)); color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Your powers row is a row of its own, empty or not: the first power gained wraps nothing. */
+  body.fight .you .powers { flex: 1 1 100%; }
   body.fight .you .hpbar { height: calc(16 * var(--u)); }
   body.fight .you .hpbar .num { font-size: max(10px, 11.5 * var(--u)); }
   body.fight .you .hprow .block { width: calc(28 * var(--u)); height: calc(28 * var(--u)); }
@@ -1328,3 +1338,8 @@ body.gameart .primary:not(.plate):active { filter: brightness(1.15); transform: 
 @media (max-width: 599px) {
   body[data-decision="event"] #screen > .list:last-child { position: sticky; bottom: var(--dock); z-index: 2; margin-top: 0; padding: 8px 0 6px; background: var(--bg); box-shadow: 0 -14px 14px -4px var(--bg); }
 }
+.grant + .grant { margin-top: 12px; }
+.grant .grantname { display: block; margin-bottom: 4px; font: 700 var(--fs-m) var(--serif); color: var(--gold); }
+
+/* Settings > Speed: Fast halves every animation and transition (a multiplier, so layout is the same). */
+:root[data-speed="fast"] { --spd: .5; }

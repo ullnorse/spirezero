@@ -20,6 +20,9 @@
 //!   follows an attack in the move happens only if the attack left the player alive (their HP
 //!   and block).
 //!
+//! The forecast moves of `obs_v2` ([`IntentCache::forecast_intents`]) are cached the same way,
+//! one entry per creature and forecast step, with the forecast move added to the key.
+//!
 //! **Oracle:** debug builds (and the `regress` profile) recompute every hit through the slow
 //! path ([`CombatState::intents`]) and assert equality, so a move or modifier that reads state
 //! outside the key fails at once (it then needs the full key, or the key grows).
@@ -28,9 +31,13 @@
 
 use sts2_core::Decimal;
 use sts2_core::combat::{CombatState, CreatureId, Hooked, Intent, IntentScratch, IntentType};
+use sts2_core::content::monsters::machine::StateIdx;
 
 use crate::key::Words;
 use crate::listeners::ListenerState;
+
+/// Forecast moves cached per creature ([`IntentCache::forecast_intents`]).
+pub const FORECAST_STEPS: usize = 4;
 
 /// Which key an entry was made under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,7 +47,7 @@ enum Key {
     Full,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct Entry {
     /// `None` while empty.
     key: Option<Key>,
@@ -54,11 +61,28 @@ struct Entry {
 #[derive(Debug, Default)]
 pub struct IntentCache {
     entries: Vec<Entry>,
+    /// The forecast moves' entries, [`FORECAST_STEPS`] per creature.
+    forecast: Vec<Entry>,
     words: Vec<u64>,
     scratch: IntentScratch,
     listeners: ListenerState,
     /// The listener generation of the state being observed, once a full key needed it.
     generation: Option<u64>,
+}
+
+/// A copy of the cache (CB2: a search copy observes as its source would); the scratch
+/// buffers are not part of its state and start empty.
+impl Clone for IntentCache {
+    fn clone(&self) -> Self {
+        Self {
+            entries: self.entries.clone(),
+            forecast: self.forecast.clone(),
+            words: self.words.clone(),
+            scratch: IntentScratch::default(),
+            listeners: self.listeners.clone(),
+            generation: self.generation,
+        }
+    }
 }
 
 /// The key `intents` (with `bases`) need ([`Key`]).
@@ -121,23 +145,61 @@ impl IntentCache {
 
     /// `enemy`'s intents on `h` (the state of the observation [`IntentCache::begin`] started).
     pub fn intents(&mut self, h: Hooked<'_>, enemy: CreatureId) -> &[Intent] {
+        self.lookup(h, enemy, None)
+    }
+
+    /// The intents of `enemy`'s table move `at` as its `step`th forecast move
+    /// ([`Hooked::intents_of_move_into`]) on `h`, cached as [`IntentCache::intents`] is, under
+    /// the same keys with `at` added (`step` only picks the entry: below [`FORECAST_STEPS`]).
+    ///
+    /// # Panics
+    /// If `step` is not below [`FORECAST_STEPS`].
+    pub fn forecast_intents(
+        &mut self,
+        h: Hooked<'_>,
+        enemy: CreatureId,
+        step: usize,
+        at: StateIdx,
+    ) -> &[Intent] {
+        assert!(step < FORECAST_STEPS, "forecast step {step}");
+        self.lookup(h, enemy, Some((step, at)))
+    }
+
+    fn lookup(
+        &mut self,
+        h: Hooked<'_>,
+        enemy: CreatureId,
+        forecast: Option<(usize, StateIdx)>,
+    ) -> &[Intent] {
+        let Self {
+            entries,
+            forecast: forecast_entries,
+            words,
+            scratch,
+            listeners,
+            generation,
+        } = self;
         let s = h.s;
-        let index = enemy.0 as usize;
-        if self.entries.len() <= index {
-            self.entries.resize_with(index + 1, Entry::default);
+        let (entries, index) = match forecast {
+            None => (entries, enemy.0 as usize),
+            Some((step, _)) => (forecast_entries, enemy.0 as usize * FORECAST_STEPS + step),
+        };
+        if entries.len() <= index {
+            entries.resize_with(index + 1, Entry::default);
         }
-        token(&mut self.words, s, enemy);
-        let token_len = self.words.len();
-        let entry = &mut self.entries[index];
+        token(words, s, enemy);
+        if let Some((_, at)) = forecast {
+            Words(words).add(&at);
+        }
+        let token_len = words.len();
+        let entry = &mut entries[index];
         let hit = match entry.key {
             None => false,
-            Some(Key::Token) => entry.words == self.words,
+            Some(Key::Token) => entry.words == *words,
             Some(key) => {
-                let generation = *self
-                    .generation
-                    .get_or_insert_with(|| self.listeners.update(s));
-                rest(&mut self.words, s, generation, key);
-                entry.words == self.words
+                let generation = *generation.get_or_insert_with(|| listeners.update(s));
+                rest(words, s, generation, key);
+                entry.words == *words
             }
         };
         if hit {
@@ -149,29 +211,38 @@ impl IntentCache {
                     }
                 }
             }
-            debug_assert_eq!(
-                entry.intents,
-                s.intents(enemy),
-                "cached intents of {enemy:?} are stale: the move or a modifier reads state outside the key",
-            );
+            #[cfg(debug_assertions)]
+            match forecast {
+                None => debug_assert_eq!(
+                    entry.intents,
+                    s.intents(enemy),
+                    "cached intents of {enemy:?} are stale: the move or a modifier reads state outside the key",
+                ),
+                Some((_, at)) => {
+                    let (mut fresh, mut bases) = (Vec::new(), Vec::new());
+                    h.intents_of_move_into(enemy, at, scratch, &mut fresh, &mut bases);
+                    debug_assert_eq!(
+                        entry.intents, fresh,
+                        "cached forecast intents of {enemy:?} at move {at} are stale",
+                    );
+                }
+            }
             return &entry.intents;
         }
-        h.intents_into(
-            enemy,
-            &mut self.scratch,
-            &mut entry.intents,
-            &mut entry.bases,
-        );
+        match forecast {
+            None => h.intents_into(enemy, scratch, &mut entry.intents, &mut entry.bases),
+            Some((_, at)) => {
+                h.intents_of_move_into(enemy, at, scratch, &mut entry.intents, &mut entry.bases);
+            }
+        }
         let key = key_of(&entry.intents, &entry.bases);
-        self.words.truncate(token_len);
+        words.truncate(token_len);
         if key != Key::Token {
-            let generation = *self
-                .generation
-                .get_or_insert_with(|| self.listeners.update(s));
-            rest(&mut self.words, s, generation, key);
+            let generation = *generation.get_or_insert_with(|| listeners.update(s));
+            rest(words, s, generation, key);
         }
         entry.key = Some(key);
-        std::mem::swap(&mut entry.words, &mut self.words);
+        std::mem::swap(&mut entry.words, words);
         &entry.intents
     }
 }

@@ -5,6 +5,7 @@ use super::cost_lists::CostLists;
 use super::energy_cost::EnergyCost;
 use super::history::CombatHistory;
 use super::hooks::HookSet;
+use super::inline_list::{InlineList, caps};
 use super::listeners::HookIndex;
 use super::star_cost::StarCost;
 use crate::content::afflictions::Affliction;
@@ -134,17 +135,60 @@ pub struct Power {
     pub skip_next_duration_tick: bool,
 }
 
+/// The filler of a power list's unused inline slots ([`Powers`]); never a creature's power.
+impl Default for Power {
+    fn default() -> Self {
+        Self {
+            id: PowerId(0),
+            kind: PowerKind::Strength,
+            amount: 0,
+            amount_on_turn_start: 0,
+            applier: None,
+            skip_next_duration_tick: false,
+        }
+    }
+}
+
+/// The value a [`DataTable`] holds: per-instance model data whose default (`None`) means "no
+/// data".
+pub trait TableData: Copy + Default + PartialEq + 'static {
+    /// The value of an id without an entry.
+    const NONE: &'static Self;
+}
+
+impl TableData for PowerData {
+    const NONE: &'static Self = &Self::None;
+}
+
+impl TableData for RelicData {
+    const NONE: &'static Self = &Self::None;
+}
+
+/// Per-instance model data, keyed by instance id, for the instances whose data is not `None`.
+///
+/// It sits beside the instances, not in them, so that the instances are small and a search
+/// copies only the few that carry data. An id without an entry has `None`, and `None` entries
+/// compare and hash as absent, so the table is the same however it was reached.
+#[derive(Debug)]
+pub struct DataTable<K, V>(Vec<(K, V)>);
+
 /// `_internalData` (the per-instance data `InitInternalData` creates) of each power that has any.
 ///
-/// Keyed by [`PowerId`], for the powers whose data is not `None`. It sits beside the creatures,
-/// not in [`Power`], so that a power is 24 bytes instead of 176: a search copies every
-/// creature's powers for each candidate action, and few powers carry data. A removed instance
-/// keeps its entry (a model still running reads it). A power without an entry has `None`, and
-/// `None` entries compare and hash as absent, so the table is the same however it was reached.
-#[derive(Debug, Default)]
-pub struct PowerDataTable(Vec<(PowerId, PowerData)>);
+/// A power is 24 bytes instead of 176. A removed instance keeps its entry (a model still
+/// running reads it).
+pub type PowerDataTable = DataTable<PowerId, PowerData>;
 
-impl Clone for PowerDataTable {
+/// The instance fields of each relic that has any (`RelicData`), so that a [`Relic`] is 8 bytes
+/// instead of 208.
+pub type RelicDataTable = DataTable<RelicId, RelicData>;
+
+impl<K, V> Default for DataTable<K, V> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<K: Copy, V: TableData> Clone for DataTable<K, V> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
@@ -154,22 +198,22 @@ impl Clone for PowerDataTable {
     }
 }
 
-impl PowerDataTable {
-    /// The entries other than `None` ([`PowerDataTable::get_mut`] may leave a `None` entry).
-    fn entries(&self) -> impl Iterator<Item = &(PowerId, PowerData)> {
-        self.0.iter().filter(|(_, d)| *d != PowerData::None)
+impl<K, V: TableData> DataTable<K, V> {
+    /// The entries other than `None` ([`DataTable::get_mut`] may leave a `None` entry).
+    fn entries(&self) -> impl Iterator<Item = &(K, V)> {
+        self.0.iter().filter(|(_, d)| d != V::NONE)
     }
 }
 
-impl PartialEq for PowerDataTable {
+impl<K: PartialEq, V: TableData> PartialEq for DataTable<K, V> {
     fn eq(&self, other: &Self) -> bool {
         self.entries().eq(other.entries())
     }
 }
 
-impl Eq for PowerDataTable {}
+impl<K: Eq, V: TableData + Eq> Eq for DataTable<K, V> {}
 
-impl std::hash::Hash for PowerDataTable {
+impl<K: std::hash::Hash, V: TableData + std::hash::Hash> std::hash::Hash for DataTable<K, V> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         for entry in self.entries() {
             entry.hash(state);
@@ -177,40 +221,40 @@ impl std::hash::Hash for PowerDataTable {
     }
 }
 
-impl PowerDataTable {
-    /// The data of the power `id`.
+impl<K: Copy + Ord, V: TableData> DataTable<K, V> {
+    /// The data of the instance `id`.
     #[must_use]
     #[inline]
-    pub fn get(&self, id: PowerId) -> &PowerData {
-        static NONE: PowerData = PowerData::None;
+    pub fn get(&self, id: K) -> &V {
         if self.0.is_empty() {
-            return &NONE;
+            return V::NONE;
         }
         self.0
-            .binary_search_by_key(&id, |&(p, _)| p)
-            .map_or(&NONE, |i| &self.0[i].1)
+            .binary_search_by_key(&id, |&(k, _)| k)
+            .map_or(V::NONE, |i| &self.0[i].1)
     }
 
-    /// The data of the power `id`, mutably (an entry is made if it has none).
-    pub(crate) fn get_mut(&mut self, id: PowerId) -> &mut PowerData {
-        let i = match self.0.binary_search_by_key(&id, |&(p, _)| p) {
+    /// The data of the instance `id`, mutably (an entry is made if it has none).
+    pub(crate) fn get_mut(&mut self, id: K) -> &mut V {
+        let i = match self.0.binary_search_by_key(&id, |&(k, _)| k) {
             Ok(i) => i,
             Err(i) => {
-                self.0.insert(i, (id, PowerData::None));
+                self.0.insert(i, (id, V::default()));
                 i
             }
         };
         &mut self.0[i].1
     }
 
-    /// Sets the data of the power `id`.
-    pub(crate) fn set(&mut self, id: PowerId, data: PowerData) {
-        match self.0.binary_search_by_key(&id, |&(p, _)| p) {
-            Ok(i) if data == PowerData::None => {
+    /// Sets the data of the instance `id`.
+    pub(crate) fn set(&mut self, id: K, data: V) {
+        let none = data == *V::NONE;
+        match self.0.binary_search_by_key(&id, |&(k, _)| k) {
+            Ok(i) if none => {
                 self.0.remove(i);
             }
             Ok(i) => self.0[i].1 = data,
-            Err(_) if data == PowerData::None => {}
+            Err(_) if none => {}
             Err(i) => self.0.insert(i, (id, data)),
         }
     }
@@ -255,6 +299,9 @@ impl PowerKinds {
     }
 }
 
+/// A creature's powers, inline up to [`caps::POWERS`].
+pub type Powers = InlineList<Power, { caps::POWERS }>;
+
 /// A player, enemy or pet.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Creature {
@@ -270,7 +317,7 @@ pub struct Creature {
     pub block: i32,
     /// In application order. Add and remove powers with the [`Creature`] methods, which keep
     /// [`Creature::power_kinds`] in step.
-    pub powers: Vec<Power>,
+    pub powers: Powers,
     /// The kinds of [`Creature::powers`].
     pub(crate) power_kinds: PowerKinds,
     /// The hooks of its powers and monster ([`super::listeners`]), kept in step by the same
@@ -279,10 +326,6 @@ pub struct Creature {
     /// The hooks of its monster (none without one), so that a walk reads them without the
     /// generated `match`. Set with [`Creature::hooks`]; a monster does not change in combat.
     pub(crate) monster_hooks: HookSet,
-    /// The instances removed from this creature, in removal order. A C# `PowerModel` outlives its
-    /// removal: a model still running (or holding it) reads and writes its fields, and its `Owner`
-    /// stays (`PowerModel.RemoveInternal`, `PowerModel.cs:583`). They no longer listen.
-    pub removed_powers: Vec<Power>,
     /// `None` for the player creature.
     pub monster: Option<Monster>,
     /// The owning player's creature, for pets such as Osty.
@@ -300,14 +343,13 @@ impl_clone_by_fields!(Creature {
     hp,
     max_hp,
     block,
-    powers: copy,
+    powers: list,
     power_kinds,
     hooks,
     monster_hooks,
-    removed_powers: copy,
     monster,
-    pet_owner,
-    slot,
+    pet_owner: set,
+    slot: set,
     infinite_hp_display,
 });
 
@@ -368,26 +410,9 @@ impl Creature {
         self.side == Side::Enemy && !self.is_secondary_enemy()
     }
 
-    /// The instance `id`, on the creature or already removed from it.
-    pub(crate) fn power_instance(&self, id: PowerId) -> Option<&Power> {
-        self.powers
-            .iter()
-            .chain(&self.removed_powers)
-            .find(|p| p.id == id)
-    }
-
-    /// [`Creature::power_instance`], mutably.
-    pub(crate) fn power_instance_mut(&mut self, id: PowerId) -> Option<&mut Power> {
-        self.powers
-            .iter_mut()
-            .chain(&mut self.removed_powers)
-            .find(|p| p.id == id)
-    }
-
     /// `RemoveAllPowersInternalExcept` (`Creature.cs:663`): every power leaves the creature,
-    /// without callbacks; the instances are kept as removed ones. The list keeps its buffer.
-    pub(crate) fn remove_all_powers(&mut self) {
-        self.removed_powers.extend_from_slice(&self.powers);
+    /// without callbacks (the caller keeps the instances as removed ones).
+    fn remove_all_powers(&mut self) {
         self.powers.clear();
         self.power_kinds = PowerKinds::default();
         self.hooks = self.count_hooks();
@@ -400,7 +425,7 @@ impl Creature {
         self.powers.push(power);
     }
 
-    /// Takes the power at `index` off the creature (not into [`Creature::removed_powers`]).
+    /// Takes the power at `index` off the creature (not into [`CombatState::removed_powers`]).
     pub(crate) fn take_power(&mut self, index: usize) -> Power {
         let power = self.powers.remove(index);
         if !self.powers.iter().any(|p| p.kind == power.kind) {
@@ -413,7 +438,7 @@ impl Creature {
     }
 
     /// Takes the powers for which `take` holds off the creature, in order (not into
-    /// [`Creature::removed_powers`]).
+    /// [`CombatState::removed_powers`]).
     pub(crate) fn take_powers_where(&mut self, take: impl Fn(&Power) -> bool) -> Vec<Power> {
         // `retain`, not a partition into two new lists: the list keeps its buffer.
         let mut taken = Vec::new();
@@ -540,6 +565,10 @@ impl Card {
         let mut card = Self::new(id, deck.kind, deck.upgrade_level);
         card.enchantment = deck.enchantment;
         crate::content::enchantments::modify_card(&mut card);
+        // The clone has no modifiers for `OnEnchant`'s `UpgradeBy` to cap, and a cap left
+        // pending would lower a later `SetThisCombat` cost on the card's first upgrade.
+        card.energy_cost.upgrade_cap = None;
+        card.star_cost.upgrade_cap = None;
         card.data = cards::data_from_deck(deck.kind, deck.counter);
         card
     }
@@ -657,17 +686,30 @@ pub enum ExtraReward {
     SpecialCard(usize),
 }
 
-/// A relic instance.
+/// The player's relics, inline up to [`caps::RELICS`].
+pub type Relics = InlineList<Relic, { caps::RELICS }>;
+
+/// A relic instance: what a hook walk reads. Its instance fields are in
+/// [`CombatState::relic_data`], so that the relics copy as 8 bytes each.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Relic {
     /// The relic's id in this combat.
     pub id: RelicId,
     /// The relic model.
     pub kind: RelicKind,
-    /// The model's instance fields; they outlive the combat.
-    pub data: RelicData,
     /// `IsMelted`: still owned (`GetRelic` finds it) but no hook listener.
     pub melted: bool,
+}
+
+/// The filler of a relic list's unused inline slots ([`Relics`]); never a player's relic.
+impl Default for Relic {
+    fn default() -> Self {
+        Self {
+            id: RelicId(0),
+            kind: RelicKind::BurningBlood,
+            melted: false,
+        }
+    }
 }
 
 /// A potion instance in a belt slot.
@@ -839,7 +881,7 @@ pub struct Player {
     /// The phase of the player's turn.
     pub phase: TurnPhase,
     /// In acquisition order.
-    pub relics: Vec<Relic>,
+    pub relics: Relics,
     /// `PotionSlots`: one entry per belt slot, `None` when empty. Using a potion empties its
     /// slot; the other potions keep their slots (`Player.RemovePotionInternal`).
     pub potions: Vec<Option<Potion>>,
@@ -888,7 +930,7 @@ impl_clone_by_fields!(Player {
     turn_number,
     extra_turn,
     phase,
-    relics: copy,
+    relics: list,
     potions: copy,
     unported_potions: copy,
     draw,
@@ -981,6 +1023,10 @@ impl std::hash::Hash for PromptCount {
 
 /// Everything about one combat. Plain data: clone it to snapshot.
 #[derive(Debug, PartialEq, Eq, Hash)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent game flags, each one the game's own boolean"
+)]
 pub struct CombatState {
     /// The run's RNG streams; they persist across combats.
     pub rng: RunRngSet,
@@ -1034,10 +1080,22 @@ pub struct CombatState {
     pub(crate) cost_lists: CostLists,
     /// The powers' instance data; read it with [`CombatState::power_data`].
     pub(crate) power_data: PowerDataTable,
+    /// The relics' instance fields; read them with [`CombatState::relic_data`].
+    pub(crate) relic_data: RelicDataTable,
+    /// The power instances removed from their owners, with the owner, in removal order. A C#
+    /// `PowerModel` outlives its removal: a model still running (or holding it) reads and
+    /// writes its fields, and its `Owner` stays (`PowerModel.RemoveInternal`,
+    /// `PowerModel.cs:583`). They no longer listen. One list for every creature, so that a
+    /// creature has no heap block of its own; read one creature's with
+    /// [`CombatState::removed_powers`].
+    pub(crate) removed_powers: Vec<(CreatureId, Power)>,
     /// `CombatManager.IsInProgress`.
     pub in_progress: bool,
     /// The run's modifiers that act inside this fight.
     pub(crate) modifiers: crate::run::modifiers::CombatModifiers,
+    /// `TestMode.IsOn` ([`CombatConfig::test_mode`](super::CombatConfig::test_mode)): where the
+    /// real game's VFX decide the order of gameplay effects, the referee runs the plain branch.
+    pub test_mode: bool,
     /// `CombatManager.IsStarting`: from set-up until combat is in progress; guarded hooks
     /// still reach their listeners meanwhile (`Hook.cs:55`).
     pub(crate) starting: bool,
@@ -1079,7 +1137,7 @@ impl_clone_by_fields!(CombatState {
     deck: copy,
     room_type,
     act_index,
-    map_coord,
+    map_coord: set,
     round,
     side,
     creatures,
@@ -1092,11 +1150,14 @@ impl_clone_by_fields!(CombatState {
     cards: copy,
     cost_lists,
     power_data,
+    relic_data,
+    removed_powers: copy,
     in_progress,
     modifiers,
+    test_mode,
     starting,
     pending_loss,
-    result,
+    result: set,
     next_power_id,
     next_potion_id,
     next_attack_id,
@@ -1255,6 +1316,12 @@ impl CombatState {
         let powers = &self.creature(id).powers;
         let prompting = powers.iter().filter(|p| p.kind.may_prompt()).count();
         self.prompting.0 -= u32::try_from(prompting).expect("power count fits u32");
+        let Self {
+            creatures,
+            removed_powers,
+            ..
+        } = self;
+        removed_powers.extend(creatures[id.index()].powers.iter().map(|&p| (id, p)));
         self.change_creature(id, Creature::remove_all_powers);
     }
 
@@ -1291,9 +1358,18 @@ impl CombatState {
         &self.player.relics[id.index()]
     }
 
-    /// The relic with `id`, mutably (its [`RelicData`]).
-    pub(crate) fn relic_mut(&mut self, id: RelicId) -> &mut Relic {
-        &mut self.player.relics[id.index()]
+    /// The instance fields of the relic `id` (`None` for a relic without any); they outlive the
+    /// combat.
+    #[must_use]
+    #[inline]
+    pub fn relic_data(&self, id: RelicId) -> &RelicData {
+        self.relic_data.get(id)
+    }
+
+    /// [`CombatState::relic_data`], mutably.
+    #[inline]
+    pub(crate) fn relic_data_mut(&mut self, id: RelicId) -> &mut RelicData {
+        self.relic_data.get_mut(id)
     }
 
     /// The card with `id`.

@@ -144,3 +144,39 @@ fn frantic_escape_raises_the_sandpit_and_costs_more() {
     assert_eq!(sandpit_amount(&c), 5);
     assert_eq!(c.state.energy_cost(card), 2);
 }
+
+#[test]
+fn auto_played_helix_drill_with_no_energy_spent_hits_zero_times() {
+    // HelixDrill.OnPlay: hits = EnergySpent this turn minus its own cost while in the Play pile,
+    // which is negative for a Helix Drill auto-played by Uproar before any energy was spent;
+    // `AttackCommand.Execute` loops `i < hits`, so it deals nothing. The Uproar kill of the
+    // Crusher gave Rocket CrabRage's 99 block, which stays whole and Rocket lives (FIX2,
+    // ROT261115S62 Defect Overgrowth A0 greedy).
+    let mut c = Combat::new(
+        CombatConfig::new(Character::Defect, SEED, 0)
+            .expect("Defect starts")
+            .with_encounter(Encounter::KaiserCrabBoss),
+    );
+    let (crusher, rocket) = arms(&c);
+    c.state.creature_mut(crusher).hp = 2;
+    c.state.creature_mut(rocket).hp = 10;
+    let uproar = give_card(&mut c, CardKind::Uproar, 0);
+    c.state.energy_cost_mut(uproar).set_this_combat(0);
+    let draw: Vec<CardId> = c.state.player.draw.iter().copied().collect();
+    let helix = with_engine(&mut c, |eng| {
+        for card in draw {
+            eng.add_to_pile(card, PileType::Discard, Position::Bottom)?;
+        }
+        let helix = eng.create_card(CardKind::HelixDrill);
+        eng.add_to_pile(helix, PileType::Draw, Position::Top)?;
+        Ok(helix)
+    });
+    c.state.energy_cost_mut(helix).set_this_combat(3);
+    c.apply(Action::PlayCard {
+        card: uproar,
+        target: Some(crusher),
+    })
+    .expect("legal");
+    let r = c.state.creature(rocket);
+    assert_eq!((r.hp, r.block), (10, 99));
+}

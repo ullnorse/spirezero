@@ -226,12 +226,13 @@ impl HighWater {
         set(Metric::PowersTotal, creature_sum(|c| c.powers.len()));
         set(
             Metric::RemovedPerCreature,
-            creature_max(|c| c.removed_powers.len()),
+            s.creatures
+                .iter()
+                .map(|c| s.removed_powers(c.id).count())
+                .max()
+                .unwrap_or(0),
         );
-        set(
-            Metric::RemovedTotal,
-            creature_sum(|c| c.removed_powers.len()),
-        );
+        set(Metric::RemovedTotal, s.removed_powers.len());
         set(Metric::Hand, p.hand.len());
         set(Metric::Draw, p.draw.len());
         set(Metric::Discard, p.discard.len());
@@ -263,7 +264,7 @@ impl HighWater {
             Metric::PowerData,
             s.creatures
                 .iter()
-                .flat_map(|c| c.powers.iter().chain(&c.removed_powers))
+                .flat_map(|c| c.powers.iter().chain(s.removed_powers(c.id)))
                 .filter(|pw| *s.power_data(pw.id) != crate::content::powers::PowerData::None)
                 .count(),
         );

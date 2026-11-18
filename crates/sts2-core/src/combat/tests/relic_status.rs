@@ -37,12 +37,14 @@ fn fight(kind: RelicKind) -> Combat {
 }
 
 fn set_data(c: &mut Combat, data: RelicData) {
-    c.edit(|s| s.relic_mut(RelicId(1)).data = data);
+    c.edit(|s| *s.relic_data_mut(RelicId(1)) = data);
 }
 
 fn in_fight(c: &Combat) -> RelicStatus {
     let relic = c.state.relic(RelicId(1));
-    relic.kind.status(&relic.data, Some(&c.state), &run_state())
+    relic
+        .kind
+        .status(c.state.relic_data(relic.id), Some(&c.state), &run_state())
 }
 
 /// The status out of a fight.
@@ -183,7 +185,7 @@ fn trigger_once_relics_pulse_until_used() {
         assert_eq!(in_fight(&c), Active, "{kind:?}");
         let relic = c.state.relic(RelicId(1));
         assert_eq!(
-            kind.status(&relic.data, None, &run_state()),
+            kind.status(c.state.relic_data(relic.id), None, &run_state()),
             Normal,
             "{kind:?} outside"
         );

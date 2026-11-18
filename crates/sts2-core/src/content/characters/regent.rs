@@ -9,7 +9,7 @@ use crate::run::relic_bag::RelicRarity;
 
 /// `RegentCardPool.GenerateAllCards()` in declaration order. With every epoch revealed nothing is
 /// filtered by epoch.
-pub(super) const CARD_POOL: [PoolCard; 91] = [
+pub(super) static CARD_POOL: [PoolCard; 91] = [
     pool_card("ALIGNMENT", Uncommon, Skill, false),
     pool_card("ARSENAL", Rare, Power, false),
     pool_card("ASTRAL_PULSE", Common, Attack, false),

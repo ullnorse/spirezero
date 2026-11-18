@@ -479,6 +479,91 @@ impl MoveMachine {
         }
     }
 
+    /// The `k` moves after the current one, as the machine would roll them if the fight stayed
+    /// as it is now, each with its certainty; read-only, it draws no random number.
+    ///
+    /// spire-mentor's `forecast_after_current` rule: a random branch takes its highest-weight
+    /// allowed branch (the first on a tie; repeat and cooldown rules read the log the walk
+    /// extends), and the step's share is that weight over the branches' total (0 when no
+    /// branch is allowed, which takes the first); a conditional branch takes its first branch
+    /// whose condition holds now (the first if none does), share 1; a move is reached with
+    /// share 1. A step's certainty is the product of the shares so far. A forced current move
+    /// (a stun) is followed by its follow-up state. Nothing is forecast before the first roll
+    /// (`rolled` false: no telegraph).
+    #[must_use]
+    pub fn forecast(
+        &self,
+        table: &MoveTable,
+        state: &CombatState,
+        owner: CreatureId,
+        rolled: bool,
+        k: usize,
+    ) -> SmallVec<[(StateIdx, f32); 4]> {
+        let mut out = SmallVec::new();
+        if !rolled && self.forced.is_none() {
+            return out;
+        }
+        let mut walk = *self;
+        let mut from = self.forced.map_or(self.current, |f| f.follow_up);
+        let mut start_at = self.forced.is_some();
+        let mut certainty = 1.0_f32;
+        for _ in 0..k {
+            let (next, share) = walk.peek_move(table, state, owner, from, start_at);
+            certainty = mul_share(certainty, share);
+            out.push((next, certainty));
+            walk.log.push(next);
+            from = next;
+            start_at = false;
+        }
+        out
+    }
+
+    /// The move a walk from `from` reaches (from its follow-up if `from` is a move, unless
+    /// `start_at`) and the product of the random branches' shares on the way.
+    fn peek_move(
+        &self,
+        table: &MoveTable,
+        state: &CombatState,
+        owner: CreatureId,
+        from: StateIdx,
+        start_at: bool,
+    ) -> (StateIdx, f32) {
+        let mut current = match table.states[from] {
+            StateDef::Move { follow_up, .. } if !start_at => follow_up,
+            _ => from,
+        };
+        let mut certainty = 1.0_f32;
+        // A table has at most 128 states, so a walk that reaches no move loops.
+        for _ in 0..=table.states.len() {
+            match table.states[current] {
+                StateDef::Move { .. } => return (current, certainty),
+                StateDef::Conditional { branches, .. } => {
+                    current = branches
+                        .iter()
+                        .find(|(_, condition)| condition(state, owner))
+                        .or_else(|| branches.first())
+                        .map_or(current, |&(s, _)| s);
+                }
+                StateDef::Random { branches, .. } => {
+                    let weights: SmallVec<[f32; 8]> = branches
+                        .iter()
+                        .map(|b| {
+                            if self.allows(b) {
+                                b.weight_fn.map_or(b.weight, |f| f(state, owner))
+                            } else {
+                                0.0
+                            }
+                        })
+                        .collect();
+                    let (pick, share) = max_share(&weights);
+                    certainty = mul_share(certainty, share);
+                    current = branches.get(pick).map_or(current, |b| b.state);
+                }
+            }
+        }
+        (current, 0.0)
+    }
+
     /// Whether the repeat and cooldown rules let `branch` be picked (`GetStateWeight` is
     /// `weight` if so, else 0; `RandomBranchState.cs:150-185`).
     fn allows(&self, branch: &Branch) -> bool {
@@ -497,9 +582,39 @@ impl MoveMachine {
     }
 }
 
+/// The first highest weight's index and its share of the total, summed in `f64` (index 0 and
+/// share 0 when the total is not positive).
+#[expect(
+    clippy::float_arithmetic,
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "a forecast's certainty is a weight share, f32 like the monster-AI weights"
+)]
+fn max_share(weights: &[f32]) -> (usize, f32) {
+    let total: f64 = weights.iter().map(|&w| f64::from(w)).sum();
+    if total <= 0.0 {
+        return (0, 0.0);
+    }
+    let (mut best, mut best_w) = (0, 0.0_f64);
+    for (i, &w) in weights.iter().enumerate() {
+        if f64::from(w) > best_w {
+            (best, best_w) = (i, f64::from(w));
+        }
+    }
+    (best, (best_w / total) as f32)
+}
+
+#[expect(
+    clippy::float_arithmetic,
+    reason = "a forecast's certainty is a product of f32 weight shares"
+)]
+fn mul_share(certainty: f32, share: f32) -> f32 {
+    certainty * share
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Branch, MoveLog, MoveMachine, Repeat};
+    use super::{Branch, MoveLog, MoveMachine, Repeat, max_share};
 
     fn machine(log: &[usize]) -> MoveMachine {
         MoveMachine {
@@ -533,5 +648,11 @@ mod tests {
         };
         assert!(!machine(&[1, 0]).allows(&cooldown));
         assert!(machine(&[1, 0, 0]).allows(&cooldown));
+    }
+
+    #[test]
+    fn a_forecast_share_is_the_first_heaviest_weight_over_the_total() {
+        assert_eq!(max_share(&[1.0, 3.0, 3.0]), (1, 3.0 / 7.0));
+        assert_eq!(max_share(&[0.0, 0.0]), (0, 0.0));
     }
 }

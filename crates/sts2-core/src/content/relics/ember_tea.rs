@@ -36,7 +36,7 @@ impl Hooks for EmberTea {
 
     /// `AfterRoomEntered` of a `CombatRoom` (the engine only dispatches it for fights).
     fn after_room_entered(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        let RelicData::EmberTea(data) = eng.s.relic(me).data else {
+        let RelicData::EmberTea(data) = *eng.s.relic_data(me) else {
             unreachable!("an EmberTea has EmberTea data");
         };
         if data.combats_left <= 0 {
@@ -46,7 +46,7 @@ impl Hooks for EmberTea {
         let owner = eng.s.player.creature;
         // No applier, no card source.
         eng.apply_power(owner, PowerKind::Strength, Decimal::from(STRENGTH), None)?;
-        let RelicData::EmberTea(data) = &mut eng.s.relic_mut(me).data else {
+        let RelicData::EmberTea(data) = eng.s.relic_data_mut(me) else {
             unreachable!("an EmberTea has EmberTea data");
         };
         data.combats_left -= 1;

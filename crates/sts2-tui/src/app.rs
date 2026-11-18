@@ -533,9 +533,11 @@ impl App {
     pub fn relic_data(&self, i: usize) -> RelicData {
         let relics = &self.run.state().relics;
         self.combat()
-            .map(|c| &c.state().player.relics)
-            .filter(|fight| fight.len() == relics.len())
-            .map_or(relics[i].data, |fight| fight[i].data)
+            .map(Combat::state)
+            .filter(|fight| fight.player.relics.len() == relics.len())
+            .map_or(relics[i].data, |fight| {
+                *fight.relic_data(fight.player.relics[i].id)
+            })
     }
 
     /// The fight in progress, if any.

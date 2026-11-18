@@ -9,7 +9,7 @@ use crate::run::relic_bag::RelicRarity;
 
 /// `IroncladCardPool.GenerateAllCards()` in declaration order. With every epoch revealed nothing is
 /// filtered by epoch.
-pub(super) const CARD_POOL: [PoolCard; 90] = [
+pub(super) static CARD_POOL: [PoolCard; 90] = [
     pool_card("AGGRESSION", Rare, Power, false),
     pool_card("ANGER", Common, Attack, false),
     pool_card("ARMAMENTS", Common, Skill, false),

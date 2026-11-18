@@ -1569,6 +1569,7 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "sts2-core",
+ "sts2-rl",
  "sts2-view",
  "wasm-bindgen",
 ]
@@ -1580,6 +1581,7 @@ dependencies = [
  "serde_json",
  "sts2-core",
  "sts2-diff",
+ "sts2-rl",
  "sts2-view",
  "sts2-web",
  "wasm-bindgen",

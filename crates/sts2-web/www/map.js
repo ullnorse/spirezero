@@ -97,6 +97,7 @@ export function routePlanner(g, svg, ctx) {
     const pic = art && uiArt(MAP_ART[kind] ?? "map_unknown");
     const num = el("b");
     const lg = el("button", `lg r-${k.role}`, pic ? Object.assign(el("img", "lgart"), { src: pic.href, alt: "" }) : icon(kind), num);
+    ctx.tip?.(lg, [k.word]);
     // Hover or tap a kind: every room of it lights up, the rest dim (tap again: all).
     const light = (on) => {
       svg.dataset.light = on ? kind : "";
@@ -159,6 +160,29 @@ export function routePlanner(g, svg, ctx) {
   let pointer = "mouse";
   let pinned = null;
   svg.addEventListener("pointerdown", (ev) => (pointer = ev.pointerType || "mouse"));
+  // A hold on a room (touch) reads what its kind is, as the game says; the tap after it does nothing.
+  let timer = 0;
+  let held = false;
+  let from = [0, 0];
+  svg.addEventListener("pointerdown", (ev) => {
+    held = false;
+    from = [ev.clientX, ev.clientY];
+    clearTimeout(timer);
+    const cell = cells.get(nodeAt(ev)?.dataset.at);
+    const word = kinds.find((k) => k.room === cell?.room)?.word;
+    if (!word || ev.pointerType === "mouse") return;
+    timer = setTimeout(() => {
+      held = true;
+      ctx.read?.([word]);
+    }, 450);
+  });
+  for (const t of ["pointerup", "pointercancel", "pointerleave"]) svg.addEventListener(t, () => clearTimeout(timer), { passive: true });
+  svg.addEventListener("pointermove", (ev) => Math.hypot(ev.clientX - from[0], ev.clientY - from[1]) > 10 && clearTimeout(timer), { passive: true });
+  svg.addEventListener("click", (ev) => {
+    if (!held) return;
+    held = false;
+    ev.stopImmediatePropagation();
+  }, true);
   svg.addEventListener("pointerover", (ev) => {
     if (ev.pointerType !== "mouse" || pinned) return;
     const n = nodeAt(ev);
@@ -189,12 +213,18 @@ export function routePlanner(g, svg, ctx) {
     const n = nodeAt(ev);
     const at = n?.dataset.at;
     const cell = at && cells.get(at);
-    if (!cell?.reachable && pointer !== "mouse") {
-      const next = nearNext(ev);
-      if (next) {
-        send({ Tap: Number(next.button) });
-        return;
+    // Touch: the first tap on a next room (or near one) previews its paths, the second travels.
+    const touch = pointer !== "mouse";
+    const near = touch && !cell?.reachable ? nearNext(ev) : null;
+    const next = touch ? (cell?.reachable ? cell : near) : null;
+    if (next?.button) {
+      const to = next.x === undefined ? null : key(next.x, next.y);
+      if (!to || picked === to) send({ Tap: Number(next.button) });
+      else {
+        pinned = to;
+        choose(to);
       }
+      return;
     }
     if (!cell?.through?.length) {
       // Not a room with paths ahead (the boss, rooms behind, the page): clear, or travel as before.

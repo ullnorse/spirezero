@@ -21,7 +21,7 @@ const UNSURE_DRAWS = 0.7;
 // A swipe's least length, as a share of the card's width.
 const SWIPE = 0.15;
 const HEROES = ["Ironclad", "Silent", "Defect", "Regent", "Necrobinder"];
-const KIND = { ancient: "Neow", event: "Event", map: "Map", rewards: "Rewards", "card-select": "Card choice", bundles: "Bundles", rest: "Rest site", treasure: "Treasure", shop: "Shop" };
+const KIND = { ancient: "Neow", event: "Event", map: "Map", rewards: "Rewards", "card-select": "Card choice", bundles: "Bundles", rest: "Rest Site", treasure: "Treasure", shop: "Shop" };
 const ROOM = { boss: "Boss", elite: "Elite", fight: "Fight" };
 
 let job = null; // the review in progress or on screen

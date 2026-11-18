@@ -17,7 +17,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::RuinedHelmet(data) = &mut s.relic_mut(me).data else {
+    let RelicData::RuinedHelmet(data) = s.relic_data_mut(me) else {
         unreachable!("a RuinedHelmet has RuinedHelmet data");
     };
     data
@@ -45,7 +45,7 @@ impl Hooks for RuinedHelmet {
         amount: Decimal,
     ) -> Option<Decimal> {
         let used = matches!(
-            s.relic(me).data,
+            *s.relic_data(me),
             RelicData::RuinedHelmet(Data {
                 used_this_combat: true
             })

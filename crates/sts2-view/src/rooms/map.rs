@@ -564,6 +564,25 @@ mod tests {
         assert_eq!(span(&total, 3), (0, 0));
     }
 
+    /// Two branches of two elites each: four elites on the map, but no path takes more than two.
+    #[test]
+    fn four_elites_on_two_branches_are_at_most_two_on_a_path() {
+        let node = |kind, children: &[usize]| RangeNode {
+            kind,
+            children: children.to_vec(),
+        };
+        let nodes = vec![
+            node(None, &[1, 3]),
+            node(Some(ELITE), &[2]),
+            node(Some(ELITE), &[5]),
+            node(Some(ELITE), &[4]),
+            node(Some(ELITE), &[5]),
+            node(None, &[]),
+        ];
+        let (total, _) = path_ranges(&nodes, &[1, 3], 6);
+        assert_eq!(span(&total, ELITE), (2, 2));
+    }
+
     #[test]
     fn the_ranges_through_a_node_keep_only_its_paths() {
         let nodes = diamond();

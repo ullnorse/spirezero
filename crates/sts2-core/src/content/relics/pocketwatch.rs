@@ -23,7 +23,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::Pocketwatch(data) = &mut s.relic_mut(me).data else {
+    let RelicData::Pocketwatch(data) = s.relic_data_mut(me) else {
         unreachable!("a Pocketwatch has Pocketwatch data");
     };
     data
@@ -51,7 +51,7 @@ impl Hooks for Pocketwatch {
     }
 
     fn modify_hand_draw(&self, s: &CombatState, me: RelicId, count: Decimal) -> Decimal {
-        let RelicData::Pocketwatch(data) = s.relic(me).data else {
+        let RelicData::Pocketwatch(data) = *s.relic_data(me) else {
             unreachable!("a Pocketwatch has Pocketwatch data");
         };
         if s.player.turn_number == 1 || data.cards_played_last_turn > CARD_THRESHOLD {

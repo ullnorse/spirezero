@@ -412,11 +412,9 @@ fn relics(ctx: &Context<'_>) -> (String, Vec<Rich>) {
     let run = ctx.run;
     let combat = run.combat().map(sts2_core::Combat::state);
     // In a fight the relics' fields are the fight's.
-    let in_fight = combat
-        .map(|c| &c.player.relics)
-        .filter(|r| r.len() == run.state().relics.len());
+    let in_fight = combat.filter(|c| c.player.relics.len() == run.state().relics.len());
     for (i, r) in run.state().relics.iter().enumerate() {
-        let data = in_fight.map_or(r.data, |fight| fight[i].data);
+        let data = in_fight.map_or(r.data, |fight| *fight.relic_data(fight.player.relics[i].id));
         let counter = r
             .kind
             .counter(&data, combat)

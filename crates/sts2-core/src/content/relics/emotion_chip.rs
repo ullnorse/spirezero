@@ -35,7 +35,7 @@ impl Hooks for EmotionChip {
 
     /// `AfterRoomEntered` of a `CombatRoom` (the engine only dispatches it for fights).
     fn after_room_entered(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        eng.s.relic_mut(me).data = RelicData::EmotionChip(Data::default());
+        *eng.s.relic_data_mut(me) = RelicData::EmotionChip(Data::default());
         Ok(())
     }
 
@@ -44,7 +44,7 @@ impl Hooks for EmotionChip {
     fn after_damage_received(&self, eng: &mut Engine<'_>, me: RelicId, hit: DamageEvent) -> Flow {
         if hit.target == eng.s.player.creature && !hit.result.was_fully_blocked {
             let turn = eng.s.player.turn_number;
-            eng.s.relic_mut(me).data = RelicData::EmotionChip(Data {
+            *eng.s.relic_data_mut(me) = RelicData::EmotionChip(Data {
                 last_unblocked_hit_turn: Some(turn),
             });
         }
@@ -52,7 +52,7 @@ impl Hooks for EmotionChip {
     }
 
     fn after_player_turn_start(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        let RelicData::EmotionChip(data) = eng.s.relic(me).data else {
+        let RelicData::EmotionChip(data) = *eng.s.relic_data(me) else {
             unreachable!("an EmotionChip has EmotionChip data");
         };
         // `HappenedLastPlayerTurn`: the entry's turn is `TurnNumber - 1`.

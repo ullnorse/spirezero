@@ -53,6 +53,9 @@ impl CardModel for HelixDrill {
         let hits = eng
             .s
             .calculate_int(play.card, Var::Named("CalculatedHits"), play.target)
+            // `for (i = 0; i < hits; i++)` in `AttackCommand.Execute`: a negative count (an auto-played
+            // Helix Drill subtracts its own cost from a turn with no energy spent) hits zero times.
+            .max(0)
             .cast_unsigned();
         let player = eng.s.player.creature;
         eng.attack(

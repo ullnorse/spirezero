@@ -19,7 +19,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::BeatingRemnant(data) = &mut s.relic_mut(me).data else {
+    let RelicData::BeatingRemnant(data) = s.relic_data_mut(me) else {
         unreachable!("a BeatingRemnant has BeatingRemnant data");
     };
     data
@@ -49,7 +49,7 @@ impl Hooks for BeatingRemnant {
         if !s.in_progress || query.target != s.player.creature {
             return amount;
         }
-        let RelicData::BeatingRemnant(data) = s.relic(me).data else {
+        let RelicData::BeatingRemnant(data) = *s.relic_data(me) else {
             unreachable!("a BeatingRemnant has BeatingRemnant data");
         };
         amount.min(Decimal::from(MAX_HP_LOSS - data.damage_received_this_turn))

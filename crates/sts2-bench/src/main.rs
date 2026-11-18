@@ -3,7 +3,7 @@
 //! `cargo xtask bench [--mode fights|runs|both|rl] [--threads N|all] [--seeds N] [--reps N]
 //! [--runs N] [--seed-start N] [--character NAME|all] [--lookahead [--fresh-copy]]
 //! [--envs N] [--no-obs] [--no-intents] [--no-mask] [--check-mask] [--starts FILE]
-//! [--combat agent|greedy|random]` (`--mode run-env`)
+//! [--combat agent|greedy|random] [--e2e] [--priv] [--obs-v2 [--no-plan]]` (`--mode run-env`)
 //!
 //! **Fights** (spire-mentor's "W1", `sts2-rs/crates/sts2-bench/examples/site_random_bench.rs`,
 //! so the two engines can be compared like for like): an Ironclad at ascension 0 with the
@@ -21,7 +21,9 @@
 //!
 //! **Run env** (`--mode run-env`, [`run_env`]): whole runs as RL episodes, `--envs N` per thread,
 //! each step one agent decision over the run space with the mask and run observation written;
-//! `--combat` says who plays the fights.
+//! `--combat` says who plays the fights; `--e2e` turns on the end-to-end options
+//! (`sts2_rl::RunOptions::E2E`: action classes, caps, events, counters), which change the
+//! workload and its digest; `--priv` adds the privileged buffer (it changes neither).
 //!
 //! **Runs**: a Necrobinder (or `--character`; `all` plays seed `s` as the `s % 5`th character in
 //! select order) at ascension 0 plays whole runs from Neow on with uniformly random
@@ -162,8 +164,16 @@ pub(crate) struct Config {
     check_mask: bool,
     /// RL: a start corpus (JSON lines) instead of W1-all's starts.
     starts: Option<String>,
-    /// Run env: who plays the fights.
+    /// Run env: who plays the fights, and whether the end-to-end options are on.
     combat: sts2_rl::CombatMode,
+    e2e: bool,
+    /// Run env: write the privileged buffer too (`--priv`; the digest is unchanged).
+    priv_obs: bool,
+    /// Run env: write the observation's v2 section too (`--obs-v2`; the digest is unchanged).
+    obs_v2: bool,
+    /// Run env with `--obs-v2`: leave the v2 section's plan column out (`--no-plan`, RLN22's
+    /// cost baseline).
+    no_plan: bool,
 }
 
 impl Config {
@@ -177,6 +187,10 @@ impl Config {
             "--no-obs" => self.obs = false,
             "--no-intents" => self.intents = false,
             "--check-mask" => self.check_mask = true,
+            "--e2e" => self.e2e = true,
+            "--priv" => self.priv_obs = true,
+            "--obs-v2" => self.obs_v2 = true,
+            "--no-plan" => self.no_plan = true,
             _ => return false,
         }
         true
@@ -203,6 +217,10 @@ impl Config {
             check_mask: false,
             starts: None,
             combat: sts2_rl::CombatMode::Agent,
+            e2e: false,
+            priv_obs: false,
+            obs_v2: false,
+            no_plan: false,
         };
         let mut it = args.iter();
         while let Some(flag) = it.next() {
@@ -292,6 +310,11 @@ pub(crate) struct Tally {
     auto: u64,
     resolved: u64,
     floors: u64,
+    /// Run env with `--e2e`: indices merged into classes, decisions taken because they had one
+    /// class, and runs ended by the fight and decision caps.
+    merged: u64,
+    auto_class: u64,
+    capped: u64,
     digest: u64,
     timed: Duration,
 }
@@ -307,6 +330,9 @@ impl Tally {
         self.auto += other.auto;
         self.resolved += other.resolved;
         self.floors += other.floors;
+        self.merged += other.merged;
+        self.auto_class += other.auto_class;
+        self.capped += other.capped;
         self.digest = self.digest.wrapping_add(other.digest);
         self.timed += other.timed;
     }
@@ -648,18 +674,27 @@ fn report(label: &str, config: &Config, work: fn(&Config, usize) -> Tally) {
             if config.obs { rl::OBS_BYTES } else { 0 },
             total.unmapped,
         ),
-        (Mode::RunEnv, _) => format!(
-            " envs={} combat={:?} obs_bytes/step={} engine_actions={} auto={} resolved={} \
+        (Mode::RunEnv, _) => {
+            format!(
+                " envs={} combat={:?} obs_bytes/step={} engine_actions={} auto={} resolved={} \
              floors={} unmapped={}",
-            config.envs,
-            config.combat,
-            sts2_rl::RUN_OBS_BYTES,
-            total.engine_actions,
-            total.auto,
-            total.resolved,
-            total.floors,
-            total.unmapped,
-        ),
+                config.envs,
+                config.combat,
+                sts2_rl::RUN_OBS_BYTES,
+                total.engine_actions,
+                total.auto,
+                total.resolved,
+                total.floors,
+                total.unmapped,
+            ) + &if config.e2e {
+                format!(
+                    " e2e merged={} auto_class={} capped={}",
+                    total.merged, total.auto_class, total.capped
+                )
+            } else {
+                String::new()
+            }
+        }
         (_, Chars::Default) => String::new(),
         _ => format!(" character={}", config.fight_character.name()),
     };

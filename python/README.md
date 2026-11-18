@@ -36,6 +36,20 @@ cargo run --profile ffi -p sts2-ffi --example ffi_run_bench -- 64 5000
   final floor) are views on the engine's buffers; the observation's layout is `crates/sts2-rl/src/run_obs.rs`
   (offsets in `layout`). `sts2.Sts2RunPufferEnv(num_envs, **kwargs)` is its PufferLib env (+1 victory, -1 other
   ends; `infos` carry the final floors).
+- End-to-end options (`docs/plans/necro-e2e.md` WP1; all off by default, `**sts2.E2E` turns on the plan's):
+  `dedupe=True` keeps one mask index per action class (identical plays, potions, choice picks, deck-selection
+  cards; `crates/sts2-rl/src/classes.rs`), `class_counts` (n × actions) holds each kept index's member count, and a
+  decision with one class is taken inside the env. `turn_cap` / `decision_cap` end a run as `fight_capped` /
+  `decision_capped` (losses, not deaths). `events=True` fills `events` (n × 4: floors entered, bosses killed, a
+  bitmask of the acts whose boss died, won) for each step; `counters=True` adds saturation and unmapped counts to
+  `stats()`. `sts2.action_table()` maps each index to its entity (kind, slot, sub-slot, phase).
+- Resume (ABI 6): `restart(seeds, next_serial)` starts env `i` on a fresh run of `seeds[i]` and later runs from
+  source serial `next_serial`; stepping `sts2.HOLD` leaves an env as it is. A learner replays each env's actions
+  of its current run (holding envs with shorter histories) to land exactly where a checkpoint left it.
+- The e2e learner (WP3/WP4): `sts2.e2e.encode` turns obs bytes into entity tokens on the GPU, `sts2.e2e.net` is
+  the 4×256 net with the entity policy head and the privileged value module, `python/train_e2e.py` the
+  synchronous PPO learner (its docstring has the reward, returns, PPO and checkpoint details), and
+  `python/e2e_token_stats.py` the encoder's done-check.
 - **Build checks.** Loading the library compares its build id (`sts2_build_id()`, a hash of the
   sources it was built from, `crates/sts2-ffi/build.rs`) with this checkout's (`sts2.source_hash()`)
   and its ABI version with the binding's, and raises `StaleBuild` on a mismatch: rebuild after every

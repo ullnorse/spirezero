@@ -227,7 +227,7 @@ impl Engine<'_> {
         }
         // The instance may already be off its owner (removed by a hook while its model still
         // runs); `ModifyAmount` still runs every hook and `SetAmount` on it (`PowerCmd.cs:219`).
-        let Some(kind) = self.s.creature(owner).power_instance(power).map(|p| p.kind) else {
+        let Some(kind) = self.s.power_instance(owner, power).map(|p| p.kind) else {
             return Ok(0);
         };
         let query = PowerQuery {
@@ -242,10 +242,10 @@ impl Engine<'_> {
         self.record_power_received(owner, kind, modified, applier);
         let change = modified.to_int_truncating();
         let me = PowerRef { owner, id: power };
-        let creature = self.s.creature_mut(owner);
-        let attached = creature.powers.iter().any(|p| p.id == power);
-        let p = creature
-            .power_instance_mut(power)
+        let attached = self.s.creature(owner).powers.iter().any(|p| p.id == power);
+        let p = self
+            .s
+            .power_instance_mut(owner, power)
             .expect("an instance is never dropped");
         // `power.Amount + (int)modifiedOffset` is unchecked C#: it wraps, then `SetAmount` clamps.
         p.amount = p
@@ -349,12 +349,12 @@ impl Engine<'_> {
             .position(|p| p.id == power);
         let removed = if let Some(index) = at {
             let removed = self.s.take_power(owner, index);
-            self.s.creature_mut(owner).removed_powers.push(removed);
+            self.s.removed_powers.push((owner, removed));
             if removed.kind == PowerKind::Minion {
                 self.s.recount_enemies();
             }
             removed
-        } else if let Some(removed) = self.s.creature(owner).power_instance(power) {
+        } else if let Some(removed) = self.s.power_instance(owner, power) {
             *removed
         } else {
             return Ok(());

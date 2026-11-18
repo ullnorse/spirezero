@@ -68,7 +68,8 @@ impl Session {
         let mut config = CombatConfig::new(character, seed, ascension)
             .map_err(|u| format!("{} starts with unported {u}", character.name()))?
             .with_encounter(encounter)
-            .with_events();
+            .with_events()
+            .in_test_mode();
         if let Some(loadout) = loadout {
             loadout::apply(&mut config, loadout)?;
         }
@@ -510,7 +511,7 @@ pub fn state_json(s: &CombatState) -> Value {
                 .player
                 .relics
                 .iter()
-                .map(|r| fields::relic_json(Some(s), r.kind, &r.data))
+                .map(|r| fields::relic_json(Some(s), r.kind, s.relic_data(r.id)))
                 .collect::<Vec<_>>(),
             "powers": if won { Vec::new() } else { powers_json(s, player.id) },
             "potions": s

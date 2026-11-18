@@ -22,7 +22,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::JossPaper(data) = &mut s.relic_mut(me).data else {
+    let RelicData::JossPaper(data) = s.relic_data_mut(me) else {
         unreachable!("a JossPaper has JossPaper data");
     };
     data

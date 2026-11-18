@@ -19,8 +19,12 @@ __pycache__/
 *.jpg
 *.jpeg
 *.png
+# Except the private README's screenshots (release/manifest.toml keeps them out of the export).
+!/docs/img/*.webp
 /art/
 /.venv
+
+python/resources
 
 # Made locally from your own copy of the game; never committed.
 /ref/

@@ -261,7 +261,35 @@ impl Clone for CombatHistory {
     }
 }
 
+/// Every field of a [`CombatHistory`], for [`CombatHistory::parts`].
+pub(crate) type HistoryParts<'a> = (
+    Option<TurnKey>,
+    &'a [HistoryEntry],
+    [u32; HistoryTag::COUNT],
+    [u32; HistoryTag::COUNT],
+    u32,
+    &'a [(CreatureId, u32)],
+    [u32; OrbKind::ALL.len()],
+    u32,
+    [Option<(u32, CardId)>; 2],
+);
+
 impl CombatHistory {
+    /// Every field, for the solver's state hash.
+    pub(crate) fn parts(&self) -> HistoryParts<'_> {
+        (
+            self.turn,
+            &self.this_turn,
+            self.this_turn_counts,
+            self.counts,
+            self.ethereal_plays_finished,
+            &self.hp_loss_hits,
+            self.orbs_channeled,
+            self.generated_by_player,
+            self.last_attacks,
+        )
+    }
+
     /// `CombatHistory.Clear`. The lists keep their buffers: a search copy that ends the
     /// combat would otherwise drop them, and the next copy into it allocate them again.
     pub(crate) fn clear(&mut self) {

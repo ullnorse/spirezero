@@ -39,7 +39,7 @@ impl Hooks for FakeHappyFlower {
         if !participants.contains(&eng.s.player.creature) {
             return Ok(());
         }
-        let RelicData::HappyFlower(data) = &mut eng.s.relic_mut(me).data else {
+        let RelicData::HappyFlower(data) = eng.s.relic_data_mut(me) else {
             unreachable!("a FakeHappyFlower has HappyFlower data");
         };
         data.turns_seen = (data.turns_seen + 1) % TURNS;

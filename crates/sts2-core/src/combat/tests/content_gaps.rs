@@ -12,7 +12,7 @@ fn with_relic(seed: &str, relic: impl Into<OwnedRelic>) -> Combat {
 }
 
 fn attacks_played(c: &Combat, relic: RelicId) -> i32 {
-    let RelicData::Nunchaku(data) = c.state.relic(relic).data else {
+    let RelicData::Nunchaku(data) = *c.state.relic_data(relic) else {
         panic!("not a Nunchaku");
     };
     data.attacks_played

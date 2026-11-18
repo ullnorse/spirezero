@@ -283,7 +283,7 @@ const SCENARIOS = {
   // Outcome `<kept after a short pull>:<closed after a long one>`.
   async swipe() {
     play(inFight);
-    S.showLocal(S.helpSheet());
+    S.showLocal(S.settingsSheet());
     const open = () => !document.querySelector("#sheet")?.hidden && !!document.querySelector("#sheet .panel");
     await swipeHead(40, 200);
     const kept = open();
@@ -496,13 +496,6 @@ const SCENARIOS = {
     click($$("#sheet .hrun")[0]);
     return `${$$("#sheet .hcard").length}`;
   },
-  // WEB12: the start screen's Daily button starts the date's seed.
-  async daily() {
-    S.showStart();
-    click(document.querySelector(".dailybtn"));
-    const { dailySeed } = await import("./daily.js");
-    return `${v().save.seed === dailySeed()}:${v().save.seed}`;
-  },
   // The draw pile as card tiles, sorted by cost.
   pile() {
     play(inFight);
@@ -532,11 +525,6 @@ const SCENARIOS = {
     const ok = play((n) => n.screen.top?.potions.some((p) => !p.empty) && n.fight, "Monster");
     click(document.querySelector("#top .pot:not(.empty)"));
     return ok;
-  },
-  help() {
-    play(inFight);
-    S.showLocal(S.helpSheet());
-    return true;
   },
   choice: () => play((n) => n.fight && n.screen.sheet?.Choice),
   end() {

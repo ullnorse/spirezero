@@ -1370,10 +1370,53 @@ impl CombatState {
     /// The power instance `id` of `owner`, still on it or removed since: a listener keeps its
     /// instance after a removal mid-call (`PoisonPower.Trigger` on a Waterfall Giant whose death
     /// stripped its debuffs).
+    #[inline]
     pub(crate) fn power(&self, owner: CreatureId, id: PowerId) -> &Power {
-        self.creature(owner)
-            .power_instance(id)
+        self.power_instance(owner, id)
             .expect("a power id names an instance of its owner")
+    }
+
+    /// The instance `id` of `owner`, on it or already removed from it.
+    #[inline]
+    pub(crate) fn power_instance(&self, owner: CreatureId, id: PowerId) -> Option<&Power> {
+        self.creature(owner)
+            .powers
+            .iter()
+            .find(|p| p.id == id)
+            .or_else(|| removed_power(&self.removed_powers, owner, id))
+    }
+
+    /// [`CombatState::power_instance`], mutably.
+    #[inline]
+    pub(crate) fn power_instance_mut(
+        &mut self,
+        owner: CreatureId,
+        id: PowerId,
+    ) -> Option<&mut Power> {
+        let Self {
+            creatures,
+            removed_powers,
+            ..
+        } = self;
+        creatures[owner.index()]
+            .powers
+            .iter_mut()
+            .find(|p| p.id == id)
+            .or_else(|| removed_power_mut(removed_powers, owner, id))
+    }
+
+    /// The instances removed from `owner`, in removal order.
+    pub fn removed_powers(&self, owner: CreatureId) -> impl Iterator<Item = &Power> {
+        self.removed_powers
+            .iter()
+            .filter(move |(o, _)| *o == owner)
+            .map(|(_, p)| p)
+    }
+
+    /// Keeps `powers`, just taken off `owner`, as removed instances.
+    pub(crate) fn keep_removed(&mut self, owner: CreatureId, powers: &[Power]) {
+        self.removed_powers
+            .extend(powers.iter().map(|&p| (owner, p)));
     }
 
     /// `_internalData` of the power instance `id` (on its owner or removed since).
@@ -1396,9 +1439,9 @@ impl CombatState {
     }
 
     /// [`CombatState::power`], mutably.
+    #[inline]
     pub(crate) fn power_mut(&mut self, owner: CreatureId, id: PowerId) -> &mut Power {
-        self.creature_mut(owner)
-            .power_instance_mut(id)
+        self.power_instance_mut(owner, id)
             .expect("a power id names an instance of its owner")
     }
 
@@ -2462,7 +2505,8 @@ impl Engine<'_> {
     /// `Hook.AfterRoomEntered` (`Hook.cs:1128`): run-level listeners without the combat, i.e.
     /// the relics, then the potions by slot (the engine has no deck-card listeners).
     pub(crate) fn after_room_entered(&mut self) -> Flow {
-        for relic in self.s.player.relics.clone() {
+        let relics = self.s.player.relics.clone();
+        for &relic in &relics {
             if relic.melted {
                 continue;
             }
@@ -3109,4 +3153,30 @@ impl Engine<'_> {
         pass!(self, Guard::None, after_combat_victory_early())?;
         pass!(self, Guard::None, after_combat_victory())
     }
+}
+
+/// The instance `id` removed from `owner`, if it was.
+#[inline]
+fn removed_power(
+    removed: &[(CreatureId, Power)],
+    owner: CreatureId,
+    id: PowerId,
+) -> Option<&Power> {
+    removed
+        .iter()
+        .find(|(o, p)| *o == owner && p.id == id)
+        .map(|(_, p)| p)
+}
+
+/// [`removed_power`], mutably.
+#[inline]
+fn removed_power_mut(
+    removed: &mut [(CreatureId, Power)],
+    owner: CreatureId,
+    id: PowerId,
+) -> Option<&mut Power> {
+    removed
+        .iter_mut()
+        .find(|(o, p)| *o == owner && p.id == id)
+        .map(|(_, p)| p)
 }

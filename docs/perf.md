@@ -5,6 +5,51 @@ The experimental bit-exact fight kernel (PF6, `sts2-kernel`, `--engine kernel`):
 Current baselines (SpireZero vs spire-mentor), the `cargo xtask bench` workload and the ranked speed plan:
 `docs/specs/perf-plan.md` (task PF1). This page is the earlier PROF profile.
 
+## PF16: heap-free creatures (stage 4 merge B′)
+`docs/specs/stage4-design.md` section 10.3 under 10.5. Base `0befefa`. No behaviour change: every step keeps every
+digest under LTO and `--pgo` (fights `ad55be60f5bd8a71`, LA and LA fresh `85229a762f9361e1`, runs
+`b2dbfa6814b8dd55`, 2,000 runs `315fea7da4b4b002`, 2,000 runs of every character `660e4b2c1f799d2f`, 32,000 runs on
+16 threads `d83ba333829f3818`).
+
+**Layout.** `combat::inline_list::InlineList<T, CAP>` holds up to `CAP` items inline and spills to a `Vec` past it; the
+one read test (`len <= CAP`) is the slice's bounds check. Capacities live in `inline_list::caps` (powers 8, relics 32;
+the `tiny-caps` feature makes both 1, so every list spills from its second item). `Creature::powers` is one;
+`removed_powers` is one owner-tagged `Vec<(CreatureId, Power)>` on the state (hashed per creature in the old order, so
+the canonical digest is unchanged); `Relic` is 8 bytes (id, kind, melted) and its data lives in
+`CombatState::relic_data` (a `RelicDataTable`, the `PowerDataTable` code made generic). `Player::relics` is an inline
+list. A list copy always copies its first 4 slots (fixed size, register moves) and the rest only when used. Copy
+`Option` fields copy by assignment (the `set` mode of `impl_clone_by_fields!`).
+
+**No-allocation test.** `copy_alloc.rs` adds `creature_and_relic_copies_allocate_nothing`: the lookahead-shaped loop
+copies the creatures and relics into buffers that have never seen the fight, from the first copy, and asserts zero
+allocations (the existing steady-state test still passes).
+
+Callgrind `Ir` per action, `fast` build, `--threads 1`: W1 220 x 10 (48,018 actions), LA and LA fresh 100 seeds
+(109,485 actions).
+
+| Step | Change | W1 | LA | LA fresh |
+|---|---|---:|---:|---:|
+| base `0befefa` | | 5,227.6 | 28,982.6 | 42,621.6 |
+| 1 | powers inline, whole array copied | 5,242.2 | 29,414.9 | 44,832.6 |
+| 1b | copy the first 4 slots, the rest when used | 5,242.2 | 29,081.2 | 44,832.6 |
+| 2 | removed powers on the state | 5,231.4 | 29,011.3 | 43,303.6 |
+| 3 | relics split (8-byte `Relic` + `RelicDataTable`) | 5,230.7 | 28,957.1 | 43,128.3 |
+| 3b | power accessors inline | 5,220.8 | 28,916.8 | |
+| 3c | no cold calls on read paths (spilled slice inline) | 5,209.3 | 28,868.2 | 43,030.6 |
+| 3d | relics an inline list | 5,211.4 | 28,770.6 | 43,163.0 |
+| 3e | `Copy` options copied by assignment | 5,211.4 | 28,610.1 | 43,163.0 |
+
+All in: W1 −16 (−0.3%), LA −373 (−1.3%), LA fresh +542 (+1.3%: a fresh clone now copies the inline arrays).
+
+Wall time, fights/s, `--pgo`, one thread, `taskset -c 6`, base and head interleaved, 9 rounds, median, after
+`final-matrix` (load 1.4-1.7): W1 157,010 → 158,667 (+1.1%), LA (300 seeds) 27,195 → 27,775 (+2.1%).
+
+**Why not −6%.** The design counted a creature as one `memcpy` once its lists are inline. `Creature` cannot be `Copy`:
+its `Rng` stays `Clone`-only (PF11) and an inline list carries its spill `Vec`, so `Vec<Creature>::clone_from` still
+copies field by field (about 70 instructions per creature, inline, no call). The reads pay the `len <= CAP` branch on
+every power visit (3-4 instructions and a register; `fold_damage` +60 per LA action). Making `Creature` `Copy`
+(spill as an index into a state-owned arena, `Rng` `Copy`) would save an estimated further ~160 per copy.
+
 ## S4A′: copy hygiene and the snapshot (stage 4 merge A′)
 `docs/specs/stage4-design.md` section 10.3. Base `1fa7ba8`; the lockstep pin bumped to it. No layout change, no
 content edit.

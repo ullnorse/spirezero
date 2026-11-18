@@ -17,6 +17,7 @@
     reason = "the game computes `a * b + c` unfused; `mul_add` would round differently"
 )]
 
+pub mod chance;
 mod grab_bag;
 mod seed;
 mod sets;
@@ -38,13 +39,47 @@ pub struct RngState {
 }
 
 /// The game's seeded random number generator: xoshiro256** plus a call counter.
-#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Rng {
     counter: i32,
     s: [u64; 4],
+    /// The solver's mode ([`chance`]): every draw is answered by the thread's chance script.
+    /// Never set in normal play; it sits in the struct's padding and is left out of equality,
+    /// hashing and the saved state.
+    scripted: bool,
 }
 
-impl_clone_by_fields!(Rng { counter, s });
+impl_clone_by_fields!(Rng {
+    counter,
+    s,
+    scripted
+});
+
+impl PartialEq for Rng {
+    fn eq(&self, other: &Self) -> bool {
+        self.counter == other.counter && self.s == other.s
+    }
+}
+
+impl Eq for Rng {}
+
+/// The derived form of `counter` and `s` (digests fold it); `scripted` only shows when set.
+impl std::fmt::Debug for Rng {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("Rng");
+        d.field("counter", &self.counter).field("s", &self.s);
+        if self.scripted {
+            d.field("scripted", &true);
+        }
+        d.finish()
+    }
+}
+
+impl std::hash::Hash for Rng {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.counter.hash(state);
+        self.s.hash(state);
+    }
+}
 
 /// One splitmix64 step, used to expand a seed into the xoshiro state.
 const fn splitmix64(x: &mut u64) -> u64 {
@@ -66,7 +101,11 @@ impl Rng {
             splitmix64(&mut x),
             splitmix64(&mut x),
         ];
-        Self { counter: 0, s }
+        Self {
+            counter: 0,
+            s,
+            scripted: false,
+        }
     }
 
     /// `new Rng(seed, name)`: a named stream seeded with `seed + xxh64(name)`.
@@ -81,7 +120,41 @@ impl Rng {
         Self {
             counter: state.counter,
             s: state.s,
+            scripted: false,
         }
+    }
+
+    /// Whether the solver's chance script answers this stream's draws ([`chance`]).
+    #[must_use]
+    pub const fn is_scripted(&self) -> bool {
+        self.scripted
+    }
+
+    /// Hands this stream's draws to the thread's chance script ([`chance`]), or back to xoshiro.
+    pub const fn set_scripted(&mut self, scripted: bool) {
+        self.scripted = scripted;
+    }
+
+    /// A scripted uniform draw in `[0, span)`, as `i64`.
+    #[cold]
+    #[inline(never)]
+    fn scripted_uniform(&mut self, span: i64) -> i64 {
+        self.bump();
+        u32::try_from(span).map_or_else(
+            |_| {
+                chance::unsupported("a uniform draw wider than u32");
+                0
+            },
+            |n| i64::from(chance::uniform(n)),
+        )
+    }
+
+    /// A scripted continuous or 64-bit draw: the solver cannot enumerate it.
+    #[cold]
+    #[inline(never)]
+    fn scripted_unsupported(&mut self, what: &'static str) {
+        self.bump();
+        chance::unsupported(what);
     }
 
     /// The current state, as the game would save it (`ToSerializable`).
@@ -133,6 +206,10 @@ impl Rng {
     /// If `max < 1`, like the game's `ArgumentOutOfRangeException`; the counter is still
     /// incremented first, matching the game.
     pub fn next_int(&mut self, max: i32) -> i32 {
+        if self.scripted {
+            assert!(max >= 1, "Rng::next_int: max must be > 0, got {max}");
+            return self.scripted_uniform(i64::from(max)) as i32;
+        }
         self.bump();
         assert!(max >= 1, "Rng::next_int: max must be > 0, got {max}");
         (self.raw_double() * f64::from(max)) as i32
@@ -144,8 +221,11 @@ impl Rng {
     /// If `min >= max` (before the counter is touched, like the game).
     pub fn next_int_range(&mut self, min: i32, max: i32) -> i32 {
         assert!(min < max, "Rng::next_int_range: min {min} >= max {max}");
-        self.bump();
         let span = i64::from(max) - i64::from(min);
+        if self.scripted {
+            return (self.scripted_uniform(span) + i64::from(min)) as i32;
+        }
+        self.bump();
         if span <= i64::from(i32::MAX) {
             (self.raw_double() * span as f64) as i32 + min
         } else {
@@ -170,12 +250,19 @@ impl Rng {
             min < max,
             "Rng::next_unsigned_int_range: min {min} >= max {max}"
         );
+        if self.scripted {
+            return min + self.scripted_uniform(i64::from(max - min)) as u32;
+        }
         self.bump();
         min + (self.raw_double() * f64::from(max - min)) as u32
     }
 
     /// `NextUnsignedLong()`: one raw 64-bit output.
-    pub const fn next_unsigned_long(&mut self) -> u64 {
+    pub fn next_unsigned_long(&mut self) -> u64 {
+        if self.scripted {
+            self.scripted_unsupported("NextUnsignedLong");
+            return 0;
+        }
         self.bump();
         self.raw_u64()
     }
@@ -202,6 +289,10 @@ impl Rng {
             min < max,
             "Rng::next_unsigned_long_range: min {min} >= max {max}"
         );
+        if self.scripted {
+            self.scripted_unsupported("NextUnsignedLong(min, max)");
+            return min;
+        }
         self.bump();
         min + (self.raw_double() * (max - min) as f64) as u64
     }
@@ -221,12 +312,20 @@ impl Rng {
     /// If `min > max` (before the counter is touched).
     pub fn next_float_range(&mut self, min: f32, max: f32) -> f32 {
         assert!(min <= max, "Rng::next_float_range: min {min} > max {max}");
+        if self.scripted {
+            self.scripted_unsupported("NextFloat");
+            return min;
+        }
         self.bump();
         (self.raw_double() * f64::from(max - min) + f64::from(min)) as f32
     }
 
     /// `NextDouble()`: a double in `[0, 1)`.
     pub fn next_double(&mut self) -> f64 {
+        if self.scripted {
+            self.scripted_unsupported("NextDouble");
+            return 0.0;
+        }
         self.bump();
         self.raw_double()
     }
@@ -237,6 +336,10 @@ impl Rng {
     /// If `min > max` (before the counter is touched).
     pub fn next_double_range(&mut self, min: f64, max: f64) -> f64 {
         assert!(min <= max, "Rng::next_double_range: min {min} > max {max}");
+        if self.scripted {
+            self.scripted_unsupported("NextDouble(min, max)");
+            return min;
+        }
         self.bump();
         self.raw_double() * (max - min) + min
     }
@@ -254,6 +357,10 @@ impl Rng {
             (min..=max).contains(&mean),
             "Rng::next_gaussian_int: mean {mean} outside [{min}, {max}]"
         );
+        if self.scripted {
+            self.scripted_unsupported("NextGaussianInt");
+            return mean;
+        }
         loop {
             let d = 1.0 - self.next_double();
             let u = 1.0 - self.next_double();
@@ -285,6 +392,15 @@ impl Rng {
         items: &'a [T],
         weight: impl Fn(&T) -> f32,
     ) -> Option<&'a T> {
+        if self.scripted {
+            self.bump();
+            let weights: Vec<f32> = items.iter().map(&weight).collect();
+            if weights.iter().all(|&w| w <= 0.0) {
+                chance::unsupported("WeightedNextItem with no positive weight");
+                return items.first();
+            }
+            return items.get(chance::weighted(&weights));
+        }
         let roll = self.next_float(1.0);
         weighted_pick(roll, items, weight)
     }
@@ -295,6 +411,14 @@ impl Rng {
     /// weights take part, so a zero-weight branch can still be picked when `num` is already 0.
     /// Returns `None` where the game throws.
     pub fn random_branch(&mut self, weights: &[f32]) -> Option<usize> {
+        if self.scripted {
+            self.bump();
+            if weights.iter().all(|&w| w <= 0.0) {
+                chance::unsupported("RandomBranch with no positive weight");
+                return (!weights.is_empty()).then_some(0);
+            }
+            return Some(chance::weighted(weights));
+        }
         let max = weights.iter().fold(0.0, |sum, &w| sum + f64::from(w)) as f32;
         let mut num = self.next_float(max);
         weights.iter().position(|&w| {

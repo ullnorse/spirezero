@@ -17,7 +17,7 @@ use sts2_core::combat::CombatState;
 use crate::key::Words;
 
 /// The generation of the listener state, bumped whenever it changes.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ListenerState {
     words: Vec<u64>,
     last: Vec<u64>,
@@ -47,6 +47,9 @@ impl ListenerState {
             }
         }
         w.add(&s.player.relics);
+        for r in &s.player.relics {
+            w.add(s.relic_data(r.id));
+        }
         w.add(&s.player.potions);
         if self.generation == 0 || self.words != self.last {
             self.generation += 1;

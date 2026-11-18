@@ -42,12 +42,12 @@ impl Hooks for VenerableTeaSet {
     type Me = RelicId;
 
     fn after_energy_reset(&self, eng: &mut Engine<'_>, me: RelicId) -> Flow {
-        let RelicData::VenerableTeaSet(data) = eng.s.relic(me).data else {
+        let RelicData::VenerableTeaSet(data) = *eng.s.relic_data(me) else {
             unreachable!("a VenerableTeaSet has VenerableTeaSet data");
         };
         if data.gain_energy_in_next_combat {
             eng.gain_energy(Decimal::from(ENERGY))?;
-            eng.s.relic_mut(me).data = RelicData::VenerableTeaSet(Data::default());
+            *eng.s.relic_data_mut(me) = RelicData::VenerableTeaSet(Data::default());
         }
         Ok(())
     }

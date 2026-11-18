@@ -43,7 +43,7 @@ impl CardModel for Unleash {
         const VARS: &[CardVar] = &[
             CardVar::new(Var::CalculationBase, 6).upgrade(3),
             CardVar::new(Var::ExtraDamage, 1),
-            CardVar::calculated(Var::CalculatedDamage, osty_hp),
+            CardVar::calculated(Var::CalculatedDamage, osty_hp).from_osty(),
         ];
         VARS
     }

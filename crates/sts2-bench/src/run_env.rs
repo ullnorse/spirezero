@@ -33,6 +33,16 @@ const fn run_config(config: &Config) -> RunConfig {
         ascension: 0,
         combat: config.combat,
         intents: config.intents,
+        options: sts2_rl::RunOptions {
+            priv_obs: config.priv_obs,
+            obs_v2: config.obs_v2,
+            plan_column: config.obs_v2 && !config.no_plan,
+            ..if config.e2e {
+                sts2_rl::RunOptions::E2E
+            } else {
+                sts2_rl::RunOptions::OFF
+            }
+        },
     }
 }
 
@@ -111,6 +121,9 @@ pub fn run_env(config: &Config, t: usize) -> Tally {
         tally.auto += step.auto;
         tally.resolved += step.resolved;
         tally.anomalies += u64::from(step.capped + step.stuck);
+        tally.merged += step.merged;
+        tally.auto_class += step.auto_class;
+        tally.capped += u64::from(step.fight_capped + step.decision_capped);
         tally.unmapped += step.unmapped;
         for (i, &done) in envs.done().iter().enumerate() {
             if done == 1 {

@@ -52,8 +52,8 @@ impl RelicKind {
 ///
 /// The game keeps one relic instance for the whole run, so every field outlives the combat
 /// unless the relic resets it in a hook (`AfterCombatEnd`, `BeforeCombatStart`, ...). The run
-/// stores the data ([`RunRelic::data`](crate::run::RunRelic)); in combat read it with
-/// `s.relic(me).data`, write it with `s.relic_mut(me)`; in a run-level hook it is
+/// `s.relic_data(me)`, write it with `s.relic_data_mut(me)`; in a run-level hook it is
+/// `*s.relic_data(me)`, write it with `s.relic_mut(me)`; in a run-level hook it is
 /// `s.relics[me].data`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum RelicData {

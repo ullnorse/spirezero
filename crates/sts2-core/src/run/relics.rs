@@ -7,7 +7,7 @@
 //! [`RunError::UnsupportedRelic`](super::RunError::UnsupportedRelic).
 
 use super::relic_bag::{BAG_RARITIES, SHARED_RELIC_POOL};
-use crate::combat::state::Relic;
+use crate::combat::state::{Relic, RelicDataTable};
 use crate::content::characters::Character;
 use crate::content::relics::{OwnedRelic, RelicData, RelicKind};
 
@@ -59,20 +59,20 @@ pub fn combat_relics(relics: &[RunRelic]) -> Vec<OwnedRelic> {
         .collect()
 }
 
-/// Writes the fields of the combat's relics back into `relics` after a fight; `combat` is the
-/// fight's relic list, built from [`combat_relics`] of `relics`.
+/// Writes the fields of the combat's relics back into `relics` after a fight; `fought` is the
+/// fight's relic list, built from [`combat_relics`] of `relics`, and `data` its relics' fields.
 ///
 /// # Panics
-/// If `combat` does not match `relics`.
-pub fn write_back(relics: &mut [RunRelic], combat: &[Relic]) {
+/// If `fought` does not match `relics`.
+pub fn write_back(relics: &mut [RunRelic], fought: &[Relic], data: &RelicDataTable) {
     assert_eq!(
         relics.len(),
-        combat.len(),
+        fought.len(),
         "the fight's relics are the run's"
     );
-    for (relic, fought) in relics.iter_mut().zip(combat) {
+    for (relic, fought) in relics.iter_mut().zip(fought) {
         assert_eq!(fought.kind, relic.kind, "the fight's relics are the run's");
-        relic.data = fought.data;
+        relic.data = *data.get(fought.id);
     }
 }
 
@@ -143,15 +143,19 @@ mod tests {
             .map(|(r, i)| Relic {
                 id: RelicId(i),
                 kind: r.kind,
-                data: if r.kind == RelicKind::Nunchaku {
-                    played
-                } else {
-                    r.data
-                },
                 melted: false,
             })
             .collect();
-        write_back(&mut relics, &fought);
+        let mut data = RelicDataTable::default();
+        for (r, f) in owned.iter().zip(&fought) {
+            let d = if r.kind == RelicKind::Nunchaku {
+                played
+            } else {
+                r.data
+            };
+            data.set(f.id, d);
+        }
+        write_back(&mut relics, &fought, &data);
         assert_eq!(relics[2].data, played);
         assert_eq!(combat_relics(&relics)[2].data, played);
     }

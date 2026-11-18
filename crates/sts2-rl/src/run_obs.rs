@@ -39,6 +39,12 @@
 //!   the removal's price (`i16`), removal used (`u8`), 0. A sold entry is zero.
 //! - [`COMBAT_AT`]: during a fight the combat observation ([`crate::obs`], [`OBS_BYTES`]),
 //!   then from [`COMBAT_STATIC_AT`] its static part ([`STATIC_BYTES`]).
+//! - [`V2_AT`]: with `obs_v2`, during a fight the v2 section ([`crate::obs_v2`],
+//!   [`V2_BYTES`]); zero otherwise. The v1 sections end at [`V1_BYTES`].
+//! - [`FULL_AT`]: with `obs_full` (and `obs_v2`), during a fight the full-view section
+//!   ([`crate::obs_full`], [`FULL_BYTES`]: the creatures' past moves); zero otherwise.
+//! - [`EVENTS_AT`]: with `obs_events`, while an event or ancient page is pending, each option's
+//!   effects as numbers ([`crate::obs_events`], [`EVENTS_BYTES`]); zero otherwise.
 //!
 //! Nothing hidden is read: not the RNG streams, the odds, the relic bags, the acts' encounter
 //! and event lists or an event's own `Rng` (`tests/leak.rs` reseeds and reorders them all).
@@ -51,6 +57,10 @@ use sts2_core::run::{
 };
 
 use crate::obs::{OBS_BYTES, Observer, STATIC_BYTES, Writer, observe_static};
+pub use crate::obs_events::{EVENTS_AT, EVENTS_BYTES};
+pub use crate::obs_full::{FULL_AT, FULL_BYTES};
+use crate::obs_v2::V2Observer;
+pub use crate::obs_v2::{V2_AT, V2_BYTES};
 use crate::run_action::{
     BUNDLE_SLOTS, OPTION_SLOTS, REWARD_CARD_SLOTS, REWARD_SLOTS, SELECT_SLOTS, SHOP_CARD_SLOTS,
     SHOP_POTION_SLOTS, SHOP_RELIC_SLOTS,
@@ -104,8 +114,10 @@ pub const TREASURE_AT: usize = REST_AT + OPTIONS * 2;
 pub const SHOP_AT: usize = TREASURE_AT + 2;
 pub const COMBAT_AT: usize = SHOP_AT + SHOP_CARDS * 6 + (SHOP_RELICS + SHOP_POTIONS) * 4 + 4;
 pub const COMBAT_STATIC_AT: usize = COMBAT_AT + OBS_BYTES;
+/// Bytes of the v1 sections (the run observation before RLN16).
+pub const V1_BYTES: usize = COMBAT_STATIC_AT + STATIC_BYTES;
 /// Bytes of the run observation.
-pub const RUN_OBS_BYTES: usize = COMBAT_STATIC_AT + STATIC_BYTES;
+pub const RUN_OBS_BYTES: usize = EVENTS_AT + EVENTS_BYTES;
 
 /// The phase code of a pending decision.
 ///
@@ -171,9 +183,15 @@ pub struct CombatView<'a> {
 }
 
 /// One env's run observation writer, with the combat observer it uses during fights.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RunObserver {
     combat: Observer,
+    /// With `obs_v2`, the v2 section's writer.
+    v2: Option<V2Observer>,
+    /// With `obs_v2`, also write the full-view section ([`crate::obs_full`]).
+    full: bool,
+    /// Write the event section ([`crate::obs_events`]).
+    events: bool,
     /// The last observation was of a fight (a new fight resets the combat caches).
     in_combat: bool,
 }
@@ -184,13 +202,41 @@ impl RunObserver {
     pub fn new(intents: bool) -> Self {
         Self {
             combat: Observer::new(intents),
+            v2: None,
+            full: false,
+            events: false,
             in_combat: false,
         }
+    }
+
+    /// The observer, writing the v2 section if `on` ([`crate::obs_v2`]).
+    #[must_use]
+    pub fn with_v2(mut self, on: bool) -> Self {
+        self.v2 = on.then(V2Observer::default);
+        self
+    }
+
+    /// The observer, writing the full-view section if `on` ([`crate::obs_full`], RLN30); it is
+    /// written only with the v2 section ([`RunObserver::with_v2`]), whose cache it shares.
+    #[must_use]
+    pub const fn with_full(mut self, on: bool) -> Self {
+        self.full = on;
+        self
+    }
+
+    /// The observer, writing the event section if `on` ([`crate::obs_events`], RLN33).
+    #[must_use]
+    pub const fn with_events(mut self, on: bool) -> Self {
+        self.events = on;
+        self
     }
 
     /// Starts a new episode.
     pub fn reset(&mut self) {
         self.combat.reset();
+        if let Some(v2) = &mut self.v2 {
+            v2.reset();
+        }
         self.in_combat = false;
     }
 
@@ -218,7 +264,12 @@ impl RunObserver {
         combat: Option<CombatView<'_>>,
         out: &mut [u8],
     ) {
-        let out = &mut out[..RUN_OBS_BYTES];
+        let (out, events) = out[..RUN_OBS_BYTES].split_at_mut(EVENTS_AT);
+        if self.events {
+            crate::obs_events::write(s, decision, events);
+        } else {
+            events.fill(0);
+        }
         {
             let mut w = Writer::new(&mut out[..COMBAT_AT]);
             header(s, decision, &mut w);
@@ -235,11 +286,27 @@ impl RunObserver {
         };
         if !self.in_combat {
             self.combat.reset();
+            if let Some(v2) = &mut self.v2 {
+                v2.reset();
+            }
             self.in_combat = true;
         }
-        let (dynamic, statics) = out[COMBAT_AT..].split_at_mut(OBS_BYTES);
+        let (dynamic, rest) = out[COMBAT_AT..].split_at_mut(OBS_BYTES);
         self.combat.observe(view.combat, dynamic);
+        let (statics, rest) = rest.split_at_mut(STATIC_BYTES);
         observe_static(view.combat, statics);
+        let (v2, full) = rest.split_at_mut(V2_BYTES);
+        let Some(writer) = &mut self.v2 else {
+            v2.fill(0);
+            full.fill(0);
+            return;
+        };
+        writer.write(view.combat, self.combat.intent_owners(), v2);
+        if self.full {
+            writer.write_full(view.combat, full);
+        } else {
+            full.fill(0);
+        }
     }
 }
 

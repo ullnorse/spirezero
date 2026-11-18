@@ -5,7 +5,7 @@
 // and each build the page announces is cached whole once (its shell, then whatever else the page
 // asks for), answering from the cache first. Builds the page has moved on from are dropped.
 const INDEX = "sts2-index";
-const SHELL = ["index.html", "style.css", "extras.css", "map.css", "bot.css", "combatfx.css", "fightfx.css", "platform.css", "desktop.css", "platform.js", "app.js", "map.js", "combatfx.js", "fightfx.js", "icons.js", "sound.js", "extras.js", "hover.js", "bugreport.js", "preview.js", "history.js", "compendium.js", "daily.js", "share.js", "bot.js", "replay.js", "review.js", "worker.js", "odds.js", "bot-worker.js", "manifest.webmanifest", "icon.svg",
+const SHELL = ["index.html", "style.css", "extras.css", "map.css", "bot.css", "combatfx.css", "fightfx.css", "platform.css", "desktop.css", "platform.js", "app.js", "map.js", "combatfx.js", "fightfx.js", "icons.js", "sound.js", "extras.js", "hover.js", "bugreport.js", "preview.js", "history.js", "compendium.js", "share.js", "bot.js", "replay.js", "review.js", "worker.js", "odds.js", "bot-worker.js", "manifest.webmanifest", "icon.svg",
   "pkg/sts2_web.js", "pkg/sts2_web_bg.wasm"];
 const buildOf = (html) => /<base href="\/v\/([0-9a-f]{12})\/">/.exec(html)?.[1];
 

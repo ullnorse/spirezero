@@ -13,6 +13,10 @@ const POWER = 80;
 const MOVE = 220; // an enemy's wind-up before its first hit lands
 const ENEMY_TURN = 260; // the beat before the enemies act
 
+// Settings > Speed: Fast plays every timing at half length. Times below are Normal ones; each is
+// scaled where it is used, so the order and layout of a playback never change.
+const K = (ms) => Math.round(ms * (document.documentElement.dataset.speed === "fast" ? 0.5 : 1));
+
 let timers = [];
 let ends = [];
 
@@ -26,7 +30,7 @@ export function finish() {
 }
 for (const kind of ["pointerdown", "keydown"]) document.addEventListener(kind, finish, { capture: true, passive: true });
 
-const at = (ms, f) => (ms <= 0 ? f() : timers.push(setTimeout(f, ms)));
+const at = (ms, f) => (ms <= 0 ? f() : timers.push(setTimeout(f, K(ms))));
 const restart = (node, cls) => {
   node.classList.remove(cls);
   void node.offsetWidth;
@@ -42,10 +46,10 @@ function float(node, cls, text, ms, x) {
   const f = ctx.el("span", `ffx ${cls}`, text);
   f.style.setProperty("--dx", `${Math.round(Math.random() * 24 - 12)}px`);
   if (x != null) f.style.left = `${Math.round(Math.max(0.1, Math.min(0.9, x)) * 100)}%`;
-  if (ms) f.style.animationDuration = `${ms}ms`;
+  if (ms) f.style.animationDuration = `${K(ms)}ms`;
   node.append(f);
   ends.push(() => f.remove());
-  timers.push(setTimeout(() => f.remove(), ms ?? 1100));
+  timers.push(setTimeout(() => f.remove(), K(ms ?? 1100)));
 }
 
 // A creature's bar fill steps with the hits; its number is the final one throughout (what the
@@ -127,11 +131,11 @@ function fly(f, to) {
   } else if (pile === "exhaust") frames.push({ transform: `translate(${ax}px, ${ay - 30}px) scale(.8)`, opacity: 0 });
   else frames.push({ transform: `translate(${ax}px, ${ay}px) scale(.2)`, opacity: 0 });
   document.body.append(g);
-  const dur = 560;
+  const dur = K(560);
   g.animate(frames, { duration: dur, easing: "cubic-bezier(.4,0,.5,1)", fill: "forwards" });
   ends.push(() => g.remove());
   timers.push(setTimeout(() => g.remove(), dur + 20));
-  return Math.round(dur * 0.42); // the card reaches its target: the hits land then
+  return Math.round(560 * 0.42); // the card reaches its target: the hits land then
 }
 
 const view = () => ctx.view();
@@ -139,7 +143,7 @@ const view = () => ctx.view();
 // WEB67: a card exhausted without being played (Brand's choice, an Ethereal card at the turn's
 // end) burns where it stood, its tile from before the redraw rising and fading as the played
 // exhaust does; one from the draw or discard pile pulses that pile. The exhaust pile takes it.
-const EXHAUST = 520;
+const EXHAUST_MS = 520;
 function burn(card, from) {
   const pile = (p) => document.querySelector(`#dock .pile[data-pile="${p}"]`);
   const was = from === "Hand" || from == null ? ctx.tilesBefore().get(card) : null;
@@ -155,17 +159,17 @@ function burn(card, from) {
         { transform: "translateY(-8px) scale(1.04)", opacity: 1, offset: 0.3 },
         { transform: "translateY(-34px) scale(.86)", opacity: 0 },
       ],
-      { duration: EXHAUST, easing: "ease-in", fill: "forwards" },
+      { duration: K(EXHAUST_MS), easing: "ease-in", fill: "forwards" },
     );
     ends.push(() => g.remove());
-    timers.push(setTimeout(() => g.remove(), EXHAUST + 20));
+    timers.push(setTimeout(() => g.remove(), K(EXHAUST_MS) + 20));
   } else if (from === "Draw" || from === "Discard") {
     const p = pile(from.toLowerCase());
     if (p) restart(p, "took");
   }
   const ex = pile("exhaust");
   if (ex) {
-    timers.push(setTimeout(() => restart(ex, "took"), was ? EXHAUST * 0.6 : 0));
+    timers.push(setTimeout(() => restart(ex, "took"), was ? K(EXHAUST_MS) * 0.6 : 0));
     ends.push(() => ex.classList.remove("took"));
   }
 }
@@ -231,7 +235,7 @@ export function play(flying) {
           const hand = document.querySelector("#screen .hand");
           if (hand) {
             hand.classList.add("later");
-            hand.style.setProperty("--deal", `${t}ms`);
+            hand.style.setProperty("--deal", `${K(t)}ms`);
             ends.push(() => hand.classList.remove("deal", "later"));
           }
         }
@@ -315,7 +319,7 @@ export function play(flying) {
       case "Died": {
         const n = nodeOf(e.creature);
         if (!n) break;
-        n.style.setProperty("--die", `${t}ms`);
+        n.style.setProperty("--die", `${K(t)}ms`);
         restart(n, "dying");
         ends.push(() => n.classList.remove("dying"));
         t += 160;
@@ -326,7 +330,7 @@ export function play(flying) {
   }
   if (flying) fly(flying, null);
   // Nothing outlives the playback's own length: the last float is cleared by `finish`.
-  timers.push(setTimeout(() => finish(), t + 1300));
+  timers.push(setTimeout(() => finish(), K(t + 1300)));
   return true;
 }
 
@@ -346,8 +350,9 @@ export function reveal(pairs) {
   if (!pairs?.length || ctx.reduced() || document.body.classList.contains("proof")) return false;
   const swap = OLD + WASH + IDLE;
   const shown = swap + CLEAR;
-  const total = shown + READ + AWAY;
-  const off = (ms) => ms / total;
+  const total = K(shown + READ + AWAY) ;
+  const norm = shown + READ + AWAY;
+  const off = (ms) => ms / norm;
   const root = ctx.el("div", `reveal n${Math.min(pairs.length, 3)}`);
   root.setAttribute("aria-live", "polite");
   const row = ctx.el("div", "rv-row");
@@ -400,7 +405,7 @@ export function reveal(pairs) {
     for (const a of root.getAnimations({ subtree: true })) a.cancel();
     root.style.opacity = "0";
     root.classList.add("done");
-    setTimeout(() => root.remove(), 400);
+    setTimeout(() => root.remove(), K(400));
   };
   ends.push(end);
   timers.push(setTimeout(() => finish(), total));

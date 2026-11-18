@@ -19,14 +19,16 @@
 //! | the shop's card removal | [`REMOVE_CARD`] | 1 |
 //! | take bundle `i` | [`BUNDLE_BASE`] + `i` | [`BUNDLE_SLOTS`] |
 //! | proceed | [`PROCEED`] | 1 |
+//! | discard the potion in belt slot `s` (RLN32, listed only with [`RunOptions::discard_potion`](crate::RunOptions)) | [`DISCARD_POTION_BASE`] + `s` | [`POTION_SLOTS`] |
 //!
 //! A combat action has its combat index. The map's next points all lie in one row, so a column
 //! names one. As in the combat space, the mask is derived from [`Run::legal_actions`]'s list:
 //! each listed action sets its index's bit and records its list position; a listed action
 //! with no index (past a block's slots) gets no bit and is counted, as is one whose index an
-//! earlier listed action took. [`RunAction::DiscardPotion`] is never listed, and [`RunAction::DeselectCard`] is left to the player, so neither has an index.
+//! earlier listed action took. [`RunAction::DiscardPotion`] is never listed by the engine; the env adds it ([`discard_offers`]) where a human would make room, only with the `discard_potion` option. [`RunAction::DeselectCard`] is left to the player and has no index.
 
-use sts2_core::run::{Run, RunAction, RunDecision};
+use sts2_core::run::shop::price;
+use sts2_core::run::{Reward, Run, RunAction, RunDecision};
 
 use crate::action::{self, ACTIONS, IndexMask};
 
@@ -72,8 +74,10 @@ pub const BUY_POTION_BASE: usize = BUY_RELIC_BASE + SHOP_RELIC_SLOTS;
 pub const REMOVE_CARD: usize = BUY_POTION_BASE + SHOP_POTION_SLOTS;
 pub const BUNDLE_BASE: usize = REMOVE_CARD + 1;
 pub const PROCEED: usize = BUNDLE_BASE + BUNDLE_SLOTS;
+/// Discard the potion in belt slot `i` (RLN32), appended so every earlier index keeps its number.
+pub const DISCARD_POTION_BASE: usize = PROCEED + 1;
 /// Indices in the whole space (combat and run).
-pub const RUN_ACTIONS: usize = PROCEED + 1;
+pub const RUN_ACTIONS: usize = DISCARD_POTION_BASE + POTION_SLOTS;
 /// `u64` words of a run mask.
 pub const RUN_MASK_WORDS: usize = RUN_ACTIONS.div_ceil(64);
 
@@ -119,8 +123,8 @@ pub fn run_level_index(action: &RunAction) -> Option<usize> {
         RunAction::Combat(_)
         | RunAction::PickCard { .. }
         | RunAction::CardAlternative { .. }
-        | RunAction::DeselectCard(_)
-        | RunAction::DiscardPotion(_) => None,
+        | RunAction::DeselectCard(_) => None,
+        RunAction::DiscardPotion(s) => slot(DISCARD_POTION_BASE, *s, POTION_SLOTS),
         RunAction::SkipReward(r) => slot(SKIP_BASE, *r, REWARD_SLOTS),
         RunAction::RestOption(i) => slot(REST_BASE, *i, OPTION_SLOTS),
         RunAction::UsePotion(s) => slot(USE_POTION_BASE, *s, POTION_SLOTS),
@@ -136,6 +140,48 @@ pub fn run_level_index(action: &RunAction) -> Option<usize> {
         RunAction::Proceed => Some(PROCEED),
     }
 }
+
+/// Appends to `legal` the [`RunAction::DiscardPotion`]s a human would use to make room (RLN32):
+/// on a rewards screen with a potion reward, or a shop with a potion the player can afford,
+/// while the belt is full.
+///
+/// Elsewhere the game allows a discard too (any screen but a card or bundle choice, and in a
+/// fight's play phase); the env offers none of those.
+pub fn discard_offers(run: &Run, legal: &mut Vec<RunAction>) {
+    let wanted = match run.pending_decision() {
+        RunDecision::Rewards(rewards) => rewards.iter().any(|r| matches!(r, Reward::Potion(_))),
+        RunDecision::Shop(shop) => {
+            let state = run.state();
+            shop.potions
+                .iter()
+                .any(|p| p.id.is_some() && price(state, p.base_cost) <= state.gold)
+        }
+        _ => false,
+    };
+    if wanted && !run.state().potions.contains(&None) {
+        legal.extend(run.discard_actions());
+    }
+}
+
+/// Whether `action` is a legal no-op the env never offers (RLN40): Trial's "Double Down".
+///
+/// In the game it only opens the abandon-run popup (a confirmed
+/// abandon ends the run as a loss, and the option stays on the page), so the engine keeps the
+/// page and a greedy net can pick it for ever (RLN39 §5). The page's other option, "Accept",
+/// always leads on, so masking it removes no useful option (`docs/semantics/run.md`).
+#[must_use]
+pub fn is_noop_event_option(run: &Run, action: &RunAction) -> bool {
+    let RunAction::EventOption(i) = action else {
+        return false;
+    };
+    run.event()
+        .and_then(|e| e.options.get(*i))
+        .and_then(|o| o.action)
+        .is_some_and(|a| a.tag == TRIAL_DOUBLE_DOWN)
+}
+
+/// The callback tag of Trial's "Double Down" ([`sts2_core::content::events`]).
+const TRIAL_DOUBLE_DOWN: &str = "DOUBLE_DOWN";
 
 impl RunMask {
     /// Fills the mask from `legal`, `run`'s legal list; the number of listed actions that get
@@ -167,7 +213,7 @@ impl RunMask {
                 let index = word * 64 + bits.trailing_zeros() as usize;
                 bits &= bits - 1;
                 let position = self.position(index).expect("a set index");
-                if !run.accepts(&legal[position]) {
+                if !run.accepts(&legal[position]) || is_noop_event_option(run, &legal[position]) {
                     self.remove(index);
                     refused += 1;
                 }
@@ -196,7 +242,7 @@ pub fn check_run_mask(run: &Run, legal: &[RunAction], mask: &RunMask) -> Result<
             continue;
         }
         seen.fill_one(index, i);
-        if !run.accepts(action) {
+        if !run.accepts(action) || is_noop_event_option(run, action) {
             continue;
         }
         mapped.fill_one(index, i);

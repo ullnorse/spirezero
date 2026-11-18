@@ -124,6 +124,18 @@ fn power(s: &CombatState, p: &Power, h: &mut Fnv) {
     s.power_data(p.id).hash(h);
 }
 
+/// The player's relics, as they hashed when their fields were inline: the length, then each
+/// relic's id, kind, fields and melted flag.
+fn relics(s: &CombatState, h: &mut Fnv) {
+    s.player.relics.len().hash(h);
+    for r in &s.player.relics {
+        r.id.hash(h);
+        r.kind.hash(h);
+        s.relic_data(r.id).hash(h);
+        r.melted.hash(h);
+    }
+}
+
 /// Hashes each part of `s` and hands it to `sink`.
 fn visit(s: &CombatState, sink: &mut impl FnMut(Part, u64)) {
     let mut h = Fnv::new();
@@ -167,7 +179,7 @@ fn visit(s: &CombatState, sink: &mut impl FnMut(Part, u64)) {
     p.turn_number.hash(&mut h);
     p.extra_turn.hash(&mut h);
     p.phase.hash(&mut h);
-    p.relics.hash(&mut h);
+    relics(s, &mut h);
     p.potions.hash(&mut h);
     p.unported_potions.hash(&mut h);
     ids(&mut h, p.pets.iter().map(|c| c.0));
@@ -189,8 +201,8 @@ fn visit(s: &CombatState, sink: &mut impl FnMut(Part, u64)) {
         for p in &c.powers {
             power(s, p, &mut h);
         }
-        c.removed_powers.len().hash(&mut h);
-        for p in &c.removed_powers {
+        s.removed_powers(c.id).count().hash(&mut h);
+        for p in s.removed_powers(c.id) {
             power(s, p, &mut h);
         }
         c.monster.hash(&mut h);

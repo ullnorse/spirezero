@@ -21,7 +21,7 @@ pub struct Data {
 }
 
 fn data_mut(s: &mut CombatState, me: RelicId) -> &mut Data {
-    let RelicData::HappyFlower(data) = &mut s.relic_mut(me).data else {
+    let RelicData::HappyFlower(data) = s.relic_data_mut(me) else {
         unreachable!("a HappyFlower has HappyFlower data");
     };
     data
