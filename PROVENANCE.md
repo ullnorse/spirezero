@@ -20,6 +20,9 @@ All of these paths are git-ignored. Code and docs cite the decompilation by path
 content. Comments paraphrase single game API calls; no block of decompiled code is quoted (the
 exporter fails on a `csharp` fence or on 3+ consecutive lines shared with the decompilation).
 
+The three README screenshots in `docs/img/` show our web client running with art imported from a
+local copy of the game; no art file itself is in the repository.
+
 ## Original work (MIT, `LICENSE`)
 
 - The Rust engine, harness, clients, RL environments, benchmarks and xtask (`crates/`, `xtask/`).

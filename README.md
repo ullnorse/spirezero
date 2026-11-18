@@ -11,6 +11,8 @@ Not affiliated with Mega Crit. You need your own copy of Slay the Spire 2 for ar
 decompiled reference and the parity oracle; none of it is in this repo
 ([`PROVENANCE.md`](PROVENANCE.md) lists what is left out and why).
 
+![The web client on a desktop: an elite fight](docs/img/web-desktop-fight.webp)
+
 ## Speed
 
 Measured with `cargo xtask bench` on a Ryzen 7 7800X3D (8 cores, 16 threads), release build with
@@ -47,6 +49,11 @@ of the same client:
   it plays offline after the first load.
 - Desktop: built for mouse and keyboard at 1440x900 to 1920x1080. Hover previews a card's
   upgrade and lights every map path through a room.
+
+<p>
+<img src="docs/img/web-phone-fight.webp" width="260" alt="A fight on a phone, the combat net's move lit">
+<img src="docs/img/web-desktop-map.webp" width="520" alt="The map on a desktop with the room ranges">
+</p>
 
 Every number on screen comes from the engine: a selected card shows the damage each enemy would
 take and the HP that End Turn would cost after it. The map shows, per room type, the range over
@@ -109,15 +116,17 @@ target/release/sts2-diff bot --first 9000000 --count 200 \
 ### Necrobinder, fights only (in progress)
 
 A separate combat-only net, trained with PPO on single fights; each fight is one episode. It sees
-only the honest observation (`crates/sts2-rl/tests/leak.rs`). On a fixed panel of 1,067 boss and
-1,091 elite fight starts at A10:
+only the honest observation (`crates/sts2-rl/tests/leak.rs`). It is measured on a fixed panel of
+1,067 boss and 1,091 elite fight starts taken from strong players' A10 runs (players with a
+Necrobinder A10 win rate above 50%), against those players' own results:
 
 | player | boss fights lost | elite fights lost |
 |---|---:|---:|
 | net, 1,255M decisions | 16.8% | 7.4% |
 | net + 64-simulation MCTS | 14.2% | 5.9% |
+| the human players | 7.5% | 2.9% |
 
-Training is still running.
+Training is still running. The browser has the 759M checkpoint (17.3% / 7.8%).
 
 ## How parity is checked
 
